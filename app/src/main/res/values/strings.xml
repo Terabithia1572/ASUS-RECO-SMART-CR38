@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ASUS RECO Smart</string>
+
+    <!-- Navigation -->
+    <string name="nav_connection">Bağlantı</string>
+    <string name="nav_live_preview">Canlı Görüntü</string>
+    <string name="nav_files">Kayıtlar</string>
+    <string name="nav_settings">Ayarlar</string>
+    <string name="nav_debug_console">Protokol</string>
+
+    <!-- Mode Badges -->
+    <string name="badge_simulation">SİMÜLASYON</string>
+    <string name="badge_real_camera">GERÇEK KAMERA</string>
+    <string name="badge_read_only">Salt Okunur</string>
+
+    <!-- Connection Screen -->
+    <string name="conn_title">ASUS RECO Smart</string>
+    <string name="conn_model">Kamera Modeli: CR38</string>
+    <string name="conn_network_setup">Kamera Bağlantısı</string>
+    <string name="conn_ip_label">Kamera IP Adresi</string>
+    <string name="conn_port_label">Komut TCP Portu</string>
+    <string name="conn_mode_real">Gerçek Kamera</string>
+    <string name="conn_mode_mock">Simülasyon Modu</string>
+    <string name="conn_mock_desc">Fiziksel kameraya bağlantı kurulmaz. Uygulama test verileriyle çalışır.</string>
+    <string name="conn_real_hint">Önce telefonunuzu CR38 kameranın Wi-Fi ağına (CR38_...) bağlayın.</string>
+    <string name="conn_button_connect">Kameraya Bağlan</string>
+    <string name="conn_button_disconnect">Bağlantıyı Kes</string>
+    <string name="conn_button_connecting">Bağlanılıyor...</string>
+    <string name="conn_session_info">Oturum Bilgileri</string>
+    <string name="conn_state_label">Durum:</string>
+    <string name="conn_token_label">Aktif Token:</string>
+    <string name="conn_rtsp_label">Canlı RTSP Akışı:</string>
+
+    <!-- Connection States -->
+    <string name="state_connected">Bağlı</string>
+    <string name="state_connecting">Bağlanıyor...</string>
+    <string name="state_disconnected">Bağlantı Yok</string>
+    <string name="state_error">Bağlantı Hatası</string>
+    <string name="msg_mock_connected">Simülasyon bağlantısı aktif.</string>
+    <string name="msg_real_connected">Kamera bağlantısı başarılı.</string>
+    <string name="msg_connecting">Kameraya bağlanılıyor...</string>
+
+    <!-- Live Stream -->
+    <string name="preview_standby">HAZIR</string>
+    <string name="preview_rec">REC</string>
+    <string name="preview_mock_title">SİMÜLASYON GÖRÜNTÜSÜ</string>
+    <string name="preview_not_connected_title">Kamera bağlı değil</string>
+    <string name="preview_not_connected_desc">Lütfen önce Wi-Fi ağından CR38 kameraya bağlanın ve Bağlantı sekmesinden oturum açın.</string>
+    <string name="preview_preparing_vf">Viewfinder hazırlanıyor (RESET_TO_VF)...</string>
+    <string name="preview_connecting_rtsp">Canlı görüntü bağlanıyor...</string>
+    <string name="preview_live">Canlı Görüntü Aktif</string>
+    <string name="preview_error">Canlı görüntü alınamadı</string>
+
+    <!-- User Action Feedback -->
+    <string name="photo_captured">Fotoğraf çekildi.</string>
+    <string name="photo_piv_captured">Kayıt sırasında fotoğraf çekildi (PHOTO_PIV).</string>
+    <string name="rec_started">Kayıt başladı.</string>
+    <string name="rec_stopped">Kayıt durduruldu.</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_take_photo">Fotoğraf Çek</string>
+    <string name="cd_start_record">Kaydı Başlat</string>
+    <string name="cd_stop_record">Kaydı Durdur</string>
+
+    <!-- Storage / File Manager -->
+    <string name="files_title">Kamera Kayıtları</string>
+    <string name="files_path">Dizin: /tmp/fuse_d/DCIM/</string>
+    <string name="files_empty">Kamerada gösterilecek dosya bulunamadı.</string>
+    <string name="files_loading">Kayıtlar yükleniyor...</string>
+    <string name="files_action_view">Görüntüle</string>
+    <string name="files_action_download">İndir</string>
+    <string name="files_action_delete">Sil</string>
+    <string name="files_type_video">Video</string>
+    <string name="files_type_photo">Fotoğraf</string>
+    <string name="dialog_delete_title">%1$s Silinsin mi?</string>
+    <string name="dialog_delete_msg">Bu işlem geri alınamaz.</string>
+    <string name="btn_cancel">İptal</string>
+    <string name="btn_confirm_delete">Sil</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Kamera Ayarları</string>
+    <string name="settings_loading">Ayarlar okunuyor...</string>
+    <string name="settings_section_general">Genel Ayarlar</string>
+    <string name="settings_section_maintenance">Bakım ve Güvenlik</string>
+    <string name="settings_format_sd">SD Kartı Biçimlendir</string>
+    <string name="settings_factory_reset">Fabrika Ayarlarına Dön</string>
+    <string name="settings_read_only_tooltip">Bu ayarın yazma komutu ASUS kaynak kodunda güvenli şekilde doğrulanamadığı için uygulamadan değiştirilemez.</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_format_title">SD Kart Biçimlendirilsin mi?</string>
+    <string name="dialog_format_msg">Kameradaki tüm fotoğraf ve videolar silinecektir. Bu işlem geri alınamaz.</string>
+    <string name="btn_format">SD Kartı Biçimlendir</string>
+
+    <string name="dialog_reset_title">Fabrika Ayarlarına Dönülsün mü?</string>
+    <string name="dialog_reset_msg">Kameranın yapılandırması varsayılan ayarlara döndürülecektir.</string>
+    <string name="btn_reset">Sıfırla</string>
+
+    <!-- Protocol Debug Console -->
+    <string name="console_title">Protokol Hata Ayıklama Konsolu</string>
+    <string name="console_subtitle">TCP Port 7878 JSON Çerçeveleri | Token: %1$d</string>
+    <string name="console_selftest">Self-Test</string>
+</resources>

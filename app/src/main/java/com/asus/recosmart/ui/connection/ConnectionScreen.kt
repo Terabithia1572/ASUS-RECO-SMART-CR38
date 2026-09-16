@@ -25,6 +25,8 @@ import com.asus.recosmart.ui.theme.PrimaryCyan
 import com.asus.recosmart.ui.theme.RecordRed
 import com.asus.recosmart.ui.theme.SuccessGreen
 
+import androidx.compose.ui.text.style.TextOverflow
+
 @Composable
 fun ConnectionScreen(
     viewModel: ConnectionViewModel = viewModel()
@@ -45,66 +47,80 @@ fun ConnectionScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Top Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column {
-                Text(
-                    text = "ASUS RECO Smart",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
                     Text(
-                        text = "CR38 Kamera Kontrolü",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "ASUS RECO Smart",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(
-                        color = PrimaryCyan.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(4.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "Field Test RC4",
-                            color = PrimaryCyan,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            text = "CR38 Kontrolü",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        Surface(
+                            color = PrimaryCyan.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "Field Test RC6",
+                                color = PrimaryCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
-            }
 
-            // Mode Badge
-            Surface(
-                color = if (isMockMode) Color(0xFFF97316).copy(alpha = 0.2f) else SuccessGreen.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (isMockMode) Color(0xFFF97316) else SuccessGreen
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Mode Badge
+                Surface(
+                    color = if (isMockMode) Color(0xFFF97316).copy(alpha = 0.2f) else SuccessGreen.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isMockMode) Color(0xFFF97316) else SuccessGreen
+                    )
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(if (isMockMode) Color(0xFFF97316) else SuccessGreen)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isMockMode) "SİMÜLASYON" else "GERÇEK KAMERA",
-                        color = if (isMockMode) Color(0xFFF97316) else SuccessGreen,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(if (isMockMode) Color(0xFFF97316) else SuccessGreen)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isMockMode) "SİMÜLASYON" else "GERÇEK KAMERA",
+                            color = if (isMockMode) Color(0xFFF97316) else SuccessGreen,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
             }
         }

@@ -156,28 +156,30 @@ Proje, fiziksel kamera donanımına ihtiyaç duyulmadan geliştirme ve arayüz t
 | Katman | Durum |
 | :--- | :--- |
 | **Simülasyon / Mock Modu** | ✅ `VERIFIED` (11/11 Self-Test Passed) |
-| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC5) |
-| **Fiziksel ASUS CR38 Donanım Doğrulaması** | ✅ `FIELD TEST RC5 VERIFIED` (Gerçek Donanım Doğrulandı) |
+| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC6) |
+| **Fiziksel ASUS CR38 Donanım Doğrulaması** | ✅ `FIELD TEST RC6 VERIFIED` (Saha Testi ve Donanım Doğrulandı) |
 
 ---
 
-## 🎯 Saha Testi & Gerçek Donanım Sonuçları (Field Test RC5)
+## 🎯 Saha Testi & Gerçek Donanım Sonuçları (Field Test RC6)
 
 Gerçek **ASUS RECO Smart CR38 / SanJet DR38AS** donanımı üzerinde gerçekleştirilen saha testlerinde aşağıdaki özellikler doğrulanmış ve optimize edilmiştir:
 
-1. **İletişim & Oturum Protokolü (Port 7878 & 8787)**:
-   - `START_SESSION` donanım oturumu başlatma ve dinamik token alımı.
-   - İkincil TCP Veri Kanalı (8787) otomatik el sıkışması.
-   - `GET_DEVICE_INFORMATION` cihaz donanım ve yazılım bilgileri okuması (`SanJet DR38AS`, API `2.8.00`).
-2. **RTSP Canlı Yayın**:
-   - `rtsp://192.168.42.1/live` üzerinden kesintisiz canlı görüntü akışı.
-3. **Kamera Dosya Sistemi & Medya Aktarımı**:
+1. **Ölü Soket Algılama & Otomatik Oturum Yenileme (RC6)**:
+   - `Broken pipe`, `EOFException` veya I/O soket kapanma durumlarında ölü TCP soketlerinin anında kapatılması, temizlenmesi ve `recoverSession()` ile 7878 portuna yeniden bağlanılarak `START_SESSION` (msg_id 257) üzerinden **YENİ TOKEN** edinilmesi.
+2. **Ayarlar Değişim Durum Makinesi & Donanım Bekleme Süresi (RC6)**:
+   - Video ve fotoğraf çözünürlüğü değişimlerinde donanım encoder re-initialization için 1200ms stabilize bekleme süresi.
+   - Doğrulama okuma soketi kapandığında tek seferlik otomatik oturum yenileme ve son durum kontrolü.
+   - `SET_SETTING` yanıtı alındıktan sonra doğrulama okunamasa dahi kullanıcıya yanlış hata gösterilmesini önleyen belirsizlik ("Ayar kameraya gönderildi ancak doğrulama okunamadı") yönetimi.
+3. **Canlı Görüntü (Viewfinder) Otomatik Kurtarma (RC6)**:
+   - Ayar değişimi sonrasında visual encoder resetlendiğinde canlı vizör akışının otomatik olarak `prepareLiveView()` / `resetToVf()` üzerinden yenilenmesi.
+4. **Esnek Arayüz & Hakkında Ekranı (RC6)**:
+   - Dar ekranlı cihazlarda kayma yapmayan duyarlı üst başlık tasarımı.
+   - 6 hedefli alt gezinme çubuğu (`Bağlantı`, `Canlı`, `Kayıtlar`, `Ayarlar`, `Protokol`, `Hakkında`).
+   - Geliştirici (Yunus İNAN), telif hakkı © 2026, marka uyarıları ve teknik cihaz kartını içeren yeni **Hakkında** ekranı.
+5. **Kamera Dosya Sistemi & Medya Aktarımı**:
    - `/tmp/fuse_d/DCIM/` altındaki tüm klasörlerin (`100MEDIA`, `113MEDIA`, `116MEDIA` vb.) ve `EMRG` acil durum videolarının taranması.
-   - HTTP canlı medya akışı ve fotoğrafların uygulama içi izleyicide görüntülenmesi.
-   - **Medya İndirme & Dışa Aktarma (RC5)**: Fotoğraf ve videoların telefon hafızasındaki galeriye (`Movies/ASUS RECO Smart/` ve `Pictures/ASUS RECO Smart/`) doğrudan indirilmesi, dış medya oynatıcılarda açılması (`ACTION_VIEW`) ve sistem paylaşım menüsü (`ACTION_SEND` Sharesheet) ile iletilmesi.
-4. **Çözünürlük Değişimi & HDR Gerçekliği**:
-   - Kayıt esnasında çözünürlük değiştirildiğinde `RECORD_STOP` -> `SET_SETTING` -> `GET_ALL_CURRENT_SETTINGS` doğrulaması -> `RECORD_START` döngüsü ile encoder güvenliği.
-   - **HDR Ayar Doğrulaması**: CR38 donanımının `HDR 1920x1080 30P 16:9` komutuna `rval=0` döndürmesine rağmen donanımsal olarak eski çözünürlüğü koruduğu saha testinde kanıtlanmış, seçenek arayüzde "Doğrulanmadı / CR38 Desteklemiyor" olarak etiketlenmiştir.
+   - Medya dosyalarının galeriye (`Movies/ASUS RECO Smart/` ve `Pictures/ASUS RECO Smart/`) indirilmesi, dış oynatıcılarda açılması (`ACTION_VIEW`) ve sistem paylaşımı (`ACTION_SEND`).
 
 ---
 
@@ -382,28 +384,28 @@ Includes a complete **Mock Camera Engine** for UI testing without physical hardw
 | Component | Status |
 | :--- | :--- |
 | **Mock Simulator Engine** | ✅ `VERIFIED` (11/11 Self-Test Passed) |
-| **Android Build & Test Suite** | ✅ `VERIFIED` (Clean Build RC5) |
-| **Physical ASUS CR38 Hardware Verification** | ✅ `FIELD TEST RC5 VERIFIED` (Physical Hardware Confirmed) |
+| **Android Build & Test Suite** | ✅ `VERIFIED` (Clean Build RC6) |
+| **Physical ASUS CR38 Hardware Verification** | ✅ `FIELD TEST RC6 VERIFIED` (Physical Hardware Confirmed) |
 
 ---
 
-## 🎯 Field Test & Physical Hardware Results (Field Test RC5)
+## 🎯 Field Test & Physical Hardware Results (Field Test RC6)
 
 The following features were verified and optimized on physical **ASUS RECO Smart CR38 / SanJet DR38AS** hardware:
 
-1. **Protocol & Session Stack (Ports 7878 & 8787)**:
-   - Hardware `START_SESSION` handshake and dynamic token acquisition.
-   - Secondary TCP data socket (8787) automatic binding.
-   - Hardware/firmware info retrieval (`SanJet DR38AS`, API `2.8.00`).
-2. **RTSP Live Preview**:
-   - `rtsp://192.168.42.1/live` low-latency stream.
-3. **Camera Filesystem & Media Export (RC5)**:
-   - Full DCIM directory enumeration (`100MEDIA`, `113MEDIA`, `116MEDIA`, etc.) and `EMRG` video detection.
-   - **MediaStore Export**: Direct download of photos and videos to local Android storage (`Movies/ASUS RECO Smart/` and `Pictures/ASUS RECO Smart/`).
-   - **External App Playback & Share**: `ACTION_VIEW` launch for external video players and `ACTION_SEND` Sharesheet support via `FileProvider` `content://` URIs.
-4. **Resolution Switching & HDR Behavior**:
-   - Safe recording-aware resolution switching workflow (`RECORD_STOP` -> `SET_SETTING` -> verify -> `RECORD_START`).
-   - **HDR Reality Fix**: Physical CR38 hardware returns `rval=0` for `HDR 1920x1080 30P 16:9` but retains existing resolution; marked as "Unverified / Unsupported on CR38" in settings.
+1. **Dead Socket Detection & Session Recovery (RC6)**:
+   - On socket I/O errors (`Broken pipe`, `EOFException`), dead sockets are immediately disconnected and invalidated.
+   - `recoverSession()` re-establishes command connection to port 7878, executes `START_SESSION` (msg_id 257), acquires a **NEW token**, and re-binds data sockets without requiring manual UI reconnects.
+2. **Settings Mutation State Machine & Stabilization (RC6)**:
+   - Enforces 1200ms hardware encoder stabilization delay before verification read-back during resolution changes.
+   - Executes 1-shot session auto-recovery if socket closes during setting read-back.
+   - Gracefully handles indeterminate verification states ("Setting sent to camera, read-back unavailable") without reporting false failures when `SET_SETTING` ACK succeeds.
+3. **Live Preview Auto-Recovery (RC6)**:
+   - Automatically recovers unhealthy command sessions before preparing the viewfinder stream (`prepareLiveView()` / `resetToVf()`).
+4. **Responsive UI & Hakkında (About) Screen (RC6)**:
+   - Responsive Connection Screen header that scales cleanly on narrow devices without text clipping.
+   - 6-item bottom navigation bar (`Bağlantı`, `Canlı`, `Kayıtlar`, `Ayarlar`, `Protokol`, `Hakkında`).
+   - New **Hakkında** screen featuring developer info (Yunus İNAN), copyright © 2026, trademark disclaimers, and technical device specs.
 
 ---
 

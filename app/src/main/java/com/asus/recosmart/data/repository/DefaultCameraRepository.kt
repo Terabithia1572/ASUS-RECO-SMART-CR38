@@ -17,10 +17,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class DefaultCameraRepository : CameraRepository {
 
     private val scope = CoroutineScope(Dispatchers.Default)
+    private val recoveryMutex = Mutex()
 
     private val tcpClient = TcpSocketClient()
     private val sessionManager = SessionManager()
@@ -172,6 +176,59 @@ class DefaultCameraRepository : CameraRepository {
                 Result.failure(err)
             }
         )
+    }
+
+    override suspend fun recoverSession(): Result<Int> {
+        if (_isMockMode.value) {
+            return mockRepository.recoverSession()
+        }
+        return recoveryMutex.withLock {
+            withContext(Dispatchers.IO) {
+                tcpClient.log("[REAL RECOVERY] ==================================================")
+                tcpClient.log("[REAL RECOVERY] Initiating centralized session recovery sequence...")
+
+                tcpClient.disconnect()
+                _cameraStatus.value = _cameraStatus.value.copy(isConnected = false, activeToken = 0)
+
+                delay(800)
+
+                val ip = _cameraStatus.value.cameraIp.ifEmpty { CameraStatus.DEFAULT_CAMERA_IP }
+                val port = if (_cameraStatus.value.commandPort > 0) _cameraStatus.value.commandPort else CameraStatus.DEFAULT_COMMAND_PORT
+
+                tcpClient.log("[REAL RECOVERY] Step 1/4: Reconnecting TCP socket to $ip:$port...")
+                val connRes = tcpClient.connectCommandSocket(ip, port)
+                if (connRes.isFailure) {
+                    val err = "Recovery connection failed: ${connRes.exceptionOrNull()?.localizedMessage}"
+                    tcpClient.log("[REAL RECOVERY FAIL] $err")
+                    sessionManager.setError(err)
+                    return@withContext Result.failure(Exception(err))
+                }
+
+                tcpClient.log("[REAL RECOVERY] Step 2/4: Requesting NEW token via START_SESSION (msg_id 257)...")
+                sessionManager.setSessionStarting()
+                val startRes = startSession()
+                if (startRes.isFailure) {
+                    val err = "Recovery START_SESSION failed: ${startRes.exceptionOrNull()?.localizedMessage}"
+                    tcpClient.log("[REAL RECOVERY FAIL] $err")
+                    tcpClient.disconnect()
+                    sessionManager.setError(err)
+                    return@withContext Result.failure(Exception(err))
+                }
+
+                val newToken = startRes.getOrThrow()
+                tcpClient.log("[REAL RECOVERY] Step 3/4: Acquired NEW session token: $newToken")
+
+                tcpClient.log("[REAL RECOVERY] Step 4/4: Re-binding data socket (8787)...")
+                tcpClient.connectDataSocket(ip, CameraStatus.DEFAULT_DATA_PORT)
+
+                getDeviceInformation()
+
+                tcpClient.log("[REAL RECOVERY] SUCCESS: Session fully recovered with new token $newToken")
+                tcpClient.log("[REAL RECOVERY] ==================================================")
+
+                Result.success(newToken)
+            }
+        }
     }
 
     override suspend fun startRecording(): Result<CameraResponse> {

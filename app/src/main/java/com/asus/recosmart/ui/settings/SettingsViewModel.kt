@@ -90,28 +90,48 @@ class SettingsViewModel(
         // Step 1: Safely stop recording if active
         if (wasRecordingBefore) {
             _statusText.value = "Video çözünürlüğü değiştirmek için kayıt geçici olarak durduruluyor..."
-            repository.logRtsp("[RESOLUTION] Step 1/5: Sending RECORD_STOP...")
+            repository.logRtsp("[RESOLUTION] Step 1/6: Sending RECORD_STOP...")
             val stopStartTime = System.currentTimeMillis()
             val stopRes = repository.stopRecording()
             val stopElapsed = System.currentTimeMillis() - stopStartTime
             repository.logRtsp("[RESOLUTION] RECORD_STOP acknowledged after ${stopElapsed}ms (success=${stopRes.isSuccess})")
 
-            repository.logRtsp("[RESOLUTION] Step 2/5: Waiting for encoder stabilization (500ms)...")
-            delay(500)
+            repository.logRtsp("[RESOLUTION] Step 2/6: Waiting for encoder stabilization (600ms)...")
+            delay(600)
         }
 
         // Step 2: Apply resolution setting
         _statusText.value = "Video çözünürlüğü uygulanıyor..."
-        repository.logRtsp("[RESOLUTION] Step 3/5: Sending SET_SETTING video_resolution='$wireValue'...")
+        repository.logRtsp("[RESOLUTION] Step 3/6: Sending SET_SETTING video_resolution='$wireValue'...")
         val setStartTime = System.currentTimeMillis()
         val setRes = repository.updateSetting(key, wireValue)
         val setElapsed = System.currentTimeMillis() - setStartTime
-        repository.logRtsp("[RESOLUTION] SET_SETTING acknowledged after ${setElapsed}ms (success=${setRes.isSuccess})")
+        val setAckSuccess = setRes.isSuccess && setRes.getOrNull()?.isSuccess == true
+        repository.logRtsp("[RESOLUTION] SET_SETTING acknowledged after ${setElapsed}ms (success=$setAckSuccess)")
 
-        // Step 3: Verify resolution setting
+        // Step 3: Hardware stabilization delay before read-back
+        _statusText.value = "Donanım ayarı işliyor, bekleniyor..."
+        repository.logRtsp("[RESOLUTION] Step 4/6: Waiting for hardware encoder re-initialization (1200ms)...")
+        delay(1200)
+
+        // Step 4: Verification read-back with 1-shot recovery if socket closed
         _statusText.value = "Video çözünürlüğü doğrulanıyor..."
-        repository.logRtsp("[RESOLUTION] Step 4/5: Verifying setting via GET_ALL_CURRENT_SETTINGS...")
-        val verifyRes = repository.fetchAllSettings()
+        repository.logRtsp("[RESOLUTION] Step 5/6: Verifying setting via GET_ALL_CURRENT_SETTINGS...")
+        var verifyRes = repository.fetchAllSettings()
+        var recoveredSession = false
+
+        if (verifyRes.isFailure && !isMockMode.value) {
+            repository.logRtsp("[RESOLUTION NOTICE] Read-back socket failed. Attempting 1-shot session recovery...")
+            _statusText.value = "Ayar uygulanırken kamera bağlantısı yenileniyor..."
+            val recRes = repository.recoverSession()
+            if (recRes.isSuccess) {
+                recoveredSession = true
+                repository.logRtsp("[RESOLUTION RECOVERY] Session recovered cleanly. Retrying read-back...")
+                delay(500)
+                verifyRes = repository.fetchAllSettings()
+            }
+        }
+
         var confirmedVal: String? = null
         if (verifyRes.isSuccess) {
             val settingsMap = verifyRes.getOrDefault(emptyList()).associateBy { it.key }
@@ -119,26 +139,40 @@ class SettingsViewModel(
             _settingSpecs.value = buildSettingSpecs(settingsMap)
         }
         val isVerified = confirmedVal == wireValue
-        repository.logRtsp("[RESOLUTION] Camera reported: '${confirmedVal ?: "unknown"}' (verified=$isVerified)")
 
-        // Step 4: Restart recording if previously active
-        if (wasRecordingBefore) {
+        // Step 5: Re-prepare Viewfinder/Stream
+        repository.logRtsp("[RESOLUTION] Restoring viewfinder stream state...")
+        repository.resetToVf()
+
+        // Step 6: Restart recording if previously active and session is healthy
+        if (wasRecordingBefore && repository.sessionState.value is SessionState.Connected) {
             _statusText.value = "Kayıt yeniden başlatılıyor..."
-            repository.logRtsp("[RESOLUTION] Step 5/5: Restarting previous recording state (RECORD_START)...")
+            repository.logRtsp("[RESOLUTION] Step 6/6: Restarting previous recording state (RECORD_START)...")
             val recStartTime = System.currentTimeMillis()
             val startRes = repository.startRecording()
             val recElapsed = System.currentTimeMillis() - recStartTime
             repository.logRtsp("[RESOLUTION] RECORD_START acknowledged after ${recElapsed}ms (success=${startRes.isSuccess})")
         }
 
-        // Step 5: Update final UI status
-        if (isVerified) {
-            _statusText.value = "Video çözünürlüğü güncellendi: $optionName"
-            repository.logRtsp("[RESOLUTION] COMPLETE: Video resolution updated to $optionName ($wireValue)")
-        } else {
-            val reason = if (confirmedVal != null) "Kamera eski değeri korudu ($confirmedVal)" else "Doğrulama okuması başarısız"
-            _statusText.value = "Video çözünürlüğü değiştirilemedi: $reason"
-            repository.logRtsp("[RESOLUTION] FAILED: $reason")
+        // Final UI Status Display
+        when {
+            isVerified -> {
+                _statusText.value = "Video çözünürlüğü doğrulandı: $optionName"
+                repository.logRtsp("[RESOLUTION] COMPLETE: Video resolution updated and verified as $optionName ($wireValue)")
+            }
+            confirmedVal != null && confirmedVal != wireValue -> {
+                _statusText.value = "Video çözünürlüğü değiştirilemedi: Kamera eski değeri korudu ($confirmedVal)"
+                repository.logRtsp("[RESOLUTION] REJECTED: Camera retained '$confirmedVal' instead of '$wireValue'")
+            }
+            setAckSuccess -> {
+                _statusText.value = if (recoveredSession) "Ayar kameraya gönderildi, oturum yenilendi (Doğrulama okunamadı)" else "Ayar kameraya gönderildi ancak doğrulama okunamadı."
+                repository.logRtsp("[RESOLUTION INDETERMINATE] SET_SETTING ACK succeeded but read-back remained unverified.")
+            }
+            else -> {
+                val err = setRes.exceptionOrNull()?.localizedMessage ?: "Komut reddedildi"
+                _statusText.value = "Video çözünürlüğü değiştirilemedi: $err"
+                repository.logRtsp("[RESOLUTION FAILED] $err")
+            }
         }
         repository.logRtsp("[RESOLUTION] ==================================================")
     }
@@ -149,30 +183,49 @@ class SettingsViewModel(
         optionName: String,
         spec: CameraSettingSpec?
     ) {
-        _statusText.value = "${spec?.label ?: key} -> $optionName güncelleniyor..."
+        val label = spec?.label ?: key
+        _statusText.value = "$label -> $optionName güncelleniyor..."
         repository.logRtsp("[SETTINGS WRITE] Key='$key', Param='$wireValue' requested...")
 
-        val res = repository.updateSetting(key, wireValue)
-        if (res.isSuccess) {
-            val verifyRes = repository.fetchAllSettings()
-            if (verifyRes.isSuccess) {
-                val settingsMap = verifyRes.getOrDefault(emptyList()).associateBy { it.key }
-                val confirmedVal = settingsMap[key]?.value
-                if (confirmedVal == wireValue) {
-                    _settingSpecs.value = buildSettingSpecs(settingsMap)
-                    _statusText.value = "${spec?.label ?: key} -> $optionName olarak güncellendi"
-                    repository.logRtsp("[SETTINGS WRITE CONFIRMED] Key='$key' confirmed on camera as '$wireValue'")
-                } else {
-                    _statusText.value = "${spec?.label ?: key} güncellenemedi (Kamera eski değeri korudu: ${confirmedVal ?: "bilinmiyor"})"
-                    repository.logRtsp("[SETTINGS WRITE REJECTED] Camera retained '${confirmedVal}' instead of '$wireValue'")
-                }
-            } else {
-                _statusText.value = "${spec?.label ?: key} güncellendi"
+        val setRes = repository.updateSetting(key, wireValue)
+        val setAckSuccess = setRes.isSuccess && setRes.getOrNull()?.isSuccess == true
+
+        delay(800)
+
+        var verifyRes = repository.fetchAllSettings()
+        var recoveredSession = false
+
+        if (verifyRes.isFailure && !isMockMode.value) {
+            repository.logRtsp("[SETTINGS WRITE NOTICE] Read-back socket failed. Attempting 1-shot session recovery...")
+            _statusText.value = "Ayar uygulanırken kamera bağlantısı yenileniyor..."
+            val recRes = repository.recoverSession()
+            if (recRes.isSuccess) {
+                recoveredSession = true
+                delay(500)
+                verifyRes = repository.fetchAllSettings()
             }
+        }
+
+        if (verifyRes.isSuccess) {
+            val settingsMap = verifyRes.getOrDefault(emptyList()).associateBy { it.key }
+            val confirmedVal = settingsMap[key]?.value
+            if (confirmedVal == wireValue) {
+                _settingSpecs.value = buildSettingSpecs(settingsMap)
+                _statusText.value = "$label -> $optionName olarak güncellendi ve doğrulandı."
+                repository.logRtsp("[SETTINGS WRITE CONFIRMED] Key='$key' confirmed on camera as '$wireValue'")
+            } else if (confirmedVal != null) {
+                _statusText.value = "$label güncellenemedi (Kamera eski değeri korudu: $confirmedVal)"
+                repository.logRtsp("[SETTINGS WRITE REJECTED] Camera retained '$confirmedVal' instead of '$wireValue'")
+            } else {
+                _statusText.value = "$label güncellendi."
+            }
+        } else if (setAckSuccess) {
+            _statusText.value = if (recoveredSession) "Kamera ayarı aldı, oturum yenilendi." else "Kamera ayarı aldı ancak doğrulama okunamadı."
+            repository.logRtsp("[SETTINGS WRITE INDETERMINATE] ACK succeeded, read-back unavailable.")
         } else {
-            val err = res.exceptionOrNull()?.localizedMessage ?: "Komut reddedildi"
-            _statusText.value = "${spec?.label ?: key} güncellenemedi: $err"
-            repository.logRtsp("[SETTINGS WRITE FAIL] Key='$key', Param='$wireValue' failed: $err")
+            val err = setRes.exceptionOrNull()?.localizedMessage ?: "Komut reddedildi"
+            _statusText.value = "$label güncellenemedi: $err"
+            repository.logRtsp("[SETTINGS WRITE FAIL] Key='$key' failed: $err")
         }
     }
 

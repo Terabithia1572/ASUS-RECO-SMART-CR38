@@ -102,6 +102,11 @@ class MockCameraRepository : CameraRepository {
         return Result.success(simulatedToken)
     }
 
+    override suspend fun recoverSession(): Result<Int> {
+        log("[MOCK RECOVERY] Recovering mock camera session...")
+        return startSession()
+    }
+
     override suspend fun startRecording(): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
         log("[MOCK TX] -> {\"msg_id\":513,\"token\":$token}")

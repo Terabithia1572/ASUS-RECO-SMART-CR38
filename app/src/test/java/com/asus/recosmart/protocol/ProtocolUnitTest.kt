@@ -411,5 +411,46 @@ class ProtocolUnitTest {
         assertEquals("Full camera path must combine root DCIM path, subfolder, and filename", "/tmp/fuse_d/DCIM/116MEDIA/EMRG0005.MP4", file.fullCameraPath)
         assertTrue("EMRG prefix must classify file as emergency video", file.isEmergency)
     }
+
+    // =========================================================================
+    // 9. FIELD TEST RC6 VERIFICATION TESTS (STABILITY / RECOVERY / RC6 UI)
+    // =========================================================================
+
+    @Test
+    fun testDeadSocketInitialUnconnectedState() {
+        val client = com.asus.recosmart.data.network.TcpSocketClient()
+        assertFalse("Unconnected TcpSocketClient must return isConnected = false", client.isConnected)
+        assertTrue("Initial transport state must default to healthy", client.isTransportHealthy)
+    }
+
+    @Test
+    fun testMockRepositorySessionRecovery() = kotlinx.coroutines.runBlocking {
+        val repo = com.asus.recosmart.data.mock.MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        val recoveryResult = repo.recoverSession()
+        assertTrue("Mock recoverSession must succeed", recoveryResult.isSuccess)
+        assertTrue("Active token must be positive after recovery", recoveryResult.getOrDefault(0) > 0)
+    }
+
+    @Test
+    fun testPhotoSizeSettingCommandSerialization() {
+        val cmd = CameraCommand.SetSetting("photo_size", "16M (4608x3456 4:3)")
+        val jsonStr = CommandSerializer.serialize(cmd, sessionToken = 1001)
+        val json = JSONObject(jsonStr)
+        assertEquals(2, json.getInt("msg_id"))
+        assertEquals(1001, json.getInt("token"))
+        assertEquals("photo_size", json.getString("type"))
+        assertEquals("16M (4608x3456 4:3)", json.getString("param"))
+    }
+
+    @Test
+    fun testSetSettingSuccessResponseParsing() {
+        val raw = "{\"rval\":0,\"msg_id\":2}"
+        val response = ResponseParser.parse(raw)
+        assertEquals(2, response.msgId)
+        assertEquals(0, response.rval)
+        assertTrue("SetSetting rval=0 response must be parsed as success", response.isSuccess)
+    }
 }
+
 

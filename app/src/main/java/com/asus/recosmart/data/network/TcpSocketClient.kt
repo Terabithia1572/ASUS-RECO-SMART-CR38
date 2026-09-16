@@ -44,6 +44,10 @@ class TcpSocketClient {
     private val receiveBuffer = ByteArrayOutputStream()
     private val commandMutex = Mutex()
 
+    private var _isTransportHealthy = true
+    val isTransportHealthy: Boolean
+        get() = _isTransportHealthy
+
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
@@ -51,7 +55,7 @@ class TcpSocketClient {
     val notifications: SharedFlow<DeviceNotification> = _notifications.asSharedFlow()
 
     val isConnected: Boolean
-        get() = commandSocket?.isConnected == true && commandSocket?.isClosed == false
+        get() = _isTransportHealthy && commandSocket?.isConnected == true && commandSocket?.isClosed == false
 
     suspend fun connectCommandSocket(ip: String, commandPort: Int, timeoutMs: Int = 4000): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -66,6 +70,7 @@ class TcpSocketClient {
             commandOutputStream = newSocket.getOutputStream()
             commandInputStream = newSocket.getInputStream()
             receiveBuffer.reset()
+            _isTransportHealthy = true
 
             log("[REAL CONNECT] TCP socket established with $ip:$commandPort (Wi-Fi bound)")
             Result.success(Unit)
@@ -103,8 +108,8 @@ class TcpSocketClient {
             val outStream = commandOutputStream
             val inStream = commandInputStream
 
-            if (outSocket == null || outStream == null || inStream == null || !outSocket.isConnected || outSocket.isClosed) {
-                val err = "Command socket is not connected"
+            if (!_isTransportHealthy || outSocket == null || outStream == null || inStream == null || !outSocket.isConnected || outSocket.isClosed) {
+                val err = "Command socket is not connected or transport is unhealthy"
                 log("[REAL ERROR] $err")
                 return@withContext Result.failure(IllegalStateException(err))
             }
@@ -173,18 +178,31 @@ class TcpSocketClient {
                 Result.success(finalResponse)
             } catch (e: java.io.EOFException) {
                 val elapsedMs = System.currentTimeMillis() - startTime
-                log("[REAL ERROR] EOF received after ${elapsedMs}ms (Socket closed by host $host:$port)")
-                disconnect()
-                Result.failure(IllegalStateException("Socket closed by camera"))
+                log("[REAL ERROR] EOF / Socket closed by camera after ${elapsedMs}ms: ${e.localizedMessage}")
+                disconnectInternal()
+                Result.failure(IllegalStateException("Socket closed by camera", e))
+            } catch (e: java.net.SocketException) {
+                val elapsedMs = System.currentTimeMillis() - startTime
+                log("[REAL ERROR] Socket error (Broken pipe / reset) after ${elapsedMs}ms: ${e.localizedMessage}")
+                disconnectInternal()
+                Result.failure(e)
             } catch (e: Exception) {
                 val elapsedMs = System.currentTimeMillis() - startTime
-                log("[REAL ERROR] Host $host:$port error after ${elapsedMs}ms: ${e.localizedMessage}")
+                log("[REAL ERROR] Command execution error after ${elapsedMs}ms: ${e.localizedMessage}")
+                if (e is java.io.IOException) {
+                    disconnectInternal()
+                }
                 Result.failure(e)
             }
         }
     }
 
     suspend fun disconnect() = withContext(Dispatchers.IO) {
+        disconnectInternal()
+    }
+
+    private fun disconnectInternal() {
+        _isTransportHealthy = false
         try {
             dataOutputStream?.close()
             dataSocket?.close()

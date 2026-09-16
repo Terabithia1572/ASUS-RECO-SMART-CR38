@@ -40,15 +40,33 @@ class LivePreviewViewModel(
                 onResult(true, null)
                 return@launch
             }
+
+            if (sessionState.value !is SessionState.Connected) {
+                _statusText.value = "Oturum yenileniyor..."
+                repository.logRtsp("[VF INIT] Session not connected. Running 1-shot recovery...")
+                repository.recoverSession()
+            }
+
             _statusText.value = "Viewfinder hazırlanıyor (RESET_TO_VF)..."
-            val res = repository.prepareLiveView()
+            var res = repository.prepareLiveView()
+
+            if (res.isFailure) {
+                repository.logRtsp("[VF INIT NOTICE] Viewfinder prep failed. Running 1-shot recovery...")
+                _statusText.value = "Canlı görüntü için bağlantı yenileniyor..."
+                val recRes = repository.recoverSession()
+                if (recRes.isSuccess) {
+                    _statusText.value = "Viewfinder yeniden hazırlanıyor..."
+                    res = repository.prepareLiveView()
+                }
+            }
+
             if (res.isSuccess && res.getOrNull()?.isSuccess == true) {
                 _statusText.value = "Viewfinder hazır."
                 onResult(true, null)
             } else {
                 val err = res.exceptionOrNull()?.localizedMessage
                     ?: "RESET_TO_VF reddedildi (rval=${res.getOrNull()?.rval})"
-                _statusText.value = "Viewfinder hazırlanamadı: $err"
+                _statusText.value = "Canlı görüntü hazırlanamadı: $err"
                 repository.logRtsp("[VF ERROR] $err")
                 onResult(false, err)
             }

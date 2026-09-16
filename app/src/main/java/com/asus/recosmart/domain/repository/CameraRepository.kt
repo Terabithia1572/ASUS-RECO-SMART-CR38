@@ -16,6 +16,7 @@ interface CameraRepository {
     suspend fun connect(ip: String = CameraStatus.DEFAULT_CAMERA_IP, port: Int = CameraStatus.DEFAULT_COMMAND_PORT): Result<Unit>
     suspend fun disconnect()
     suspend fun startSession(): Result<Int>
+    suspend fun recoverSession(): Result<Int>
     suspend fun startRecording(): Result<CameraResponse>
     suspend fun stopRecording(): Result<CameraResponse>
     suspend fun takePhoto(): Result<CameraResponse>

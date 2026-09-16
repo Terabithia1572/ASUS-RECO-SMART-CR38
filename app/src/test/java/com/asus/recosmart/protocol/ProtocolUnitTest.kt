@@ -687,4 +687,178 @@ class ProtocolUnitTest {
         assertEquals(1, downloadedOnly.size)
         assertEquals("FILE0001.MP4", downloadedOnly[0].filename)
     }
+
+    // =========================================================================
+    // 12. FIELD TEST RC7.2 VERIFICATION TESTS (RECORDING LIFECYCLE DECOUPLING)
+    // =========================================================================
+
+    @Test
+    fun testRecordingSurvivesLiveToRecordsNavigation() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        assertTrue(repo.cameraStatus.value.isRecording)
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        assertTrue("Recording must remain true during Live -> Records navigation", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRecordingSurvivesLiveToSettingsNavigation() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        assertTrue("Recording must remain true during Live -> Settings navigation", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRecordingSurvivesLiveToConnectionNavigation() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        assertTrue("Recording must remain true during Live -> Connection navigation", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRecordingSurvivesLiveToProtocolNavigation() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        assertTrue("Recording must remain true during Live -> Protocol navigation", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRecordingSurvivesLiveToAboutNavigation() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        assertTrue("Recording must remain true during Live -> About navigation", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testLeavingLiveWhileRecordingDoesNotInvokeRecordStop() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("Leaving Live tab while recording must NOT invoke RECORD_STOP (msg_id 514)", logs.contains("514"))
+    }
+
+    @Test
+    fun testLeavingLiveWhileRecordingDoesNotInvokeStopVf() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertTrue("Leaving Live tab while recording must skip camera-side STOP_VF", logs.contains("STOP_VF skipped because camera is currently RECORDING"))
+    }
+
+    @Test
+    fun testLeavingLiveDoesNotModifyCameraStatusIsRecording() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        repo.stopLiveView("LIVE_SCREEN_EXIT")
+        assertTrue("cameraStatus.isRecording must stay true on tab exit", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testReopeningLiveWhileAlreadyRecordingDoesNotInvokeRecordStart() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.prepareLiveView("LIVE_SCREEN_ENTER")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("Reopening Live tab while recording must NOT invoke RECORD_START (msg_id 513)", logs.contains("msg_id\":513"))
+    }
+
+    @Test
+    fun testReopeningLiveWhileAlreadyRecordingDoesNotInvokeRecordStop() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.prepareLiveView("LIVE_SCREEN_ENTER")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("Reopening Live tab while recording must NOT invoke RECORD_STOP (msg_id 514)", logs.contains("msg_id\":514"))
+    }
+
+    @Test
+    fun testReopeningLiveWhileRecordingDoesNotPerformDestructiveResetToVf() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.prepareLiveView("LIVE_SCREEN_ENTER")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertTrue("Reopening Live tab while recording must skip RESET_TO_VF", logs.contains("RESET_TO_VF skipped because camera is currently RECORDING"))
+    }
+
+    @Test
+    fun testExplicitStopButtonStillInvokesExactlyOneRecordStop() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.stopRecording("USER_RECORD_BUTTON")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertTrue("Explicit stop button must log origin USER_RECORD_BUTTON and msg_id 514", logs.contains("[CMD][origin=USER_RECORD_BUTTON]") && logs.contains("514"))
+    }
+
+    @Test
+    fun testExplicitStopStillTriggersMediaDiscoverySequence() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        repo.stopRecording("USER_RECORD_BUTTON")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertTrue("Explicit stop must trigger RC7.1 post-stop media discovery", logs.contains("[REC] new media discovered:"))
+    }
+
+    @Test
+    fun testLocalRtspPlayerReleaseDoesNotAlterRepositoryRecordingState() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        // Local ExoPlayer release simulation (clearing local UI state)
+        repo.setFirstVideoFrameRendered(false)
+        assertTrue("Releasing local ExoPlayer state must NOT change repository isRecording", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testVehicleModeReconnectWhileCameraAlreadyRecordsSendsNoRecordStartOrStopPair() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("AUTOMATION")
+        repo.clearDebugLogs()
+
+        val statusRes = repo.getAppStatus()
+        assertTrue(statusRes.isSuccess)
+
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("Vehicle mode status check while camera already records must NOT send RECORD_START", logs.contains("msg_id\":513"))
+        assertFalse("Vehicle mode status check while camera already records must NOT send RECORD_STOP", logs.contains("msg_id\":514"))
+    }
 }

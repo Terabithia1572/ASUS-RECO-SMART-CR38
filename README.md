@@ -15,37 +15,23 @@ Orijinal mobil uygulamanın eski Android sürümlerine bağımlılığını orta
 
 ---
 
-## ✨ Özellikler (Field Test RC7.1)
+## ✨ Özellikler (Field Test RC7.2)
 
-- **Sekme Geziniminde Kayıt Durumunun Korunması**:
-  - Kameranın kayıt durumu `CameraRepository` (`cameraStatus`) seviyesinde authoritative (otoritatif) cihaz/oturum durumu olarak yönetilir.
-  - Sekmeler arası geçişlerde (`LivePreviewScreen` kapansa bile) `RECORD_STOP` veya `RECORD_START` komutları otomatik olarak tetiklenmez.
-  - Canlı Önizlemeye dönüldüğünde kameranın aktif kayıt durumu hemen algılanır ve kırmızı "KAYIT" durumu gösterilir.
-  - Canlı görüntü başlatma işlemi `idempotent` ve tekilleştirilmiş (serialized) hale getirilerek mükerrer `RESET_TO_VF` işlemleri önlenmiştir.
-- **Güvenli Kayıt Sonlandırma ve Anında Dosya Keşfi**:
-  - `RECORD_STOP` komutu gönderildikten sonra komut onayı (`acknowledgement`) beklenir ve kamera dosya sisteminin stabilize olması için kısa süreli (~500-1000 ms) dinamik bekleme sağlanır.
-  - Kamera bağlantısı/oturumu koparılmadan DCIM dizini sorgulanır (`LS`), oluşturulan yeni MP4 video dosyası gerçek kamera listesinden otomatik keşfedilip Kamera Kayıtları listesine aktarılır (`[REC] new media discovered: <filename>`).
+- **Fiziksel Kayıt Durumunun Sekme Geçişlerinden Ayrıştırılması**:
+  - `LivePreviewScreen` sekmesinden çıkıldığında (`onDispose`) kamera tarafına `STOP_VF` (msg_id 260) veya `RESET_TO_VF` (msg_id 259) komutları gönderilmez. Sadece yerel Android `ExoPlayer` belleği serbest bırakılır.
+  - Sekme gezinimleri (`Live` -> `Records`, `Settings`, `Connection`, `Protocol`, `About`) fiziksel kameranın video kaydını sonlandırmaz, kayıt kesintisiz devam eder.
+  - Canlı Önizleme sekmesine yeniden dönüldüğünde kameranın aktif kayıt durumu korunur (`isRecording == true`), tahrip edici `RESET_TO_VF` veya `STOP_VF` sıfırlamaları atlanarak RTSP akışına (`rtsp://192.168.42.1/live`) doğrudan bağlanılır.
+- **Komut Kaynağı (Origin) İzleme**:
+  - Tüm protokol komutlarına gönderim kaynağı eklendi (örn: `[CMD][origin=USER_RECORD_BUTTON] RECORD_START msg_id=513`, `[CMD][origin=LIVE_SCREEN_ENTER] RESET_TO_VF`, `[LOCAL][origin=LIVE_SCREEN_EXIT] RTSP renderer released`).
+- **Güvenli Kayıt Sonlandırma ve Anında Dosya Keşfi (RC7.1 Baselines)**:
+  - Sadece kullanıcı kırmızı Kaydı Durdur butonuna bastığında `RECORD_STOP` komutu gönderilir.
+  - Komut onayından sonra dosya sistemi stabilizasyon beklemesi (~800 ms) yapılır ve yeni oluşturulan MP4 dosyası otomatik keşfedilir (`[REC] new media discovered: <filename>`).
 - **Kamera Kayıtlarında Yerel Arama & Sıralama**:
-  - **Arama**: Dosya ve klasör isimlerine göre (örn: `FILE4089`, `EMRG`, `113MEDIA`, `116MEDIA`) harf büyüklüğüne duyarsız (case-insensitive) anlık arama.
-  - **Sıralama**:
-    - Tarih: Yeniden Eskiye (Varsayılan)
-    - Tarih: Eskiden Yeniye
-    - İsim: A → Z
-    - İsim: Z → A
-    - Klasör: A → Z
+  - Dosya ve klasör isimlerine göre (örn: `FILE4089`, `EMRG`, `113MEDIA`, `116MEDIA`) harf büyüklüğüne duyarsız (case-insensitive) anlık arama ve esnek sıralama (Tarih Yeniden Eskiye/Eskiden Yeniye, İsim A-Z/Z-A, Klasör A-Z).
 - **Gelişmiş Filtreleme & Dinamik Klasör Süzgeçleri**:
-  - Yatay kaydırılabilir responsive çip düzeni ile **Kategori** (Tümü, Videolar, Fotoğraflar, Acil Durum, Telefona İndirilenler), **Lokasyon** (Kamerada, Telefonda) ve **Klasör** (dinamik algılanan `113MEDIA`, `116MEDIA` vb.) süzgeçleri.
-  - **Sonuç Özeti**: Filtreleme ve arama yapıldığında `"143 kayıttan 18 tanesi gösteriliyor"` şeklinde dinamik bildirim.
+  - Yatay kaydırılabilir responsive çip düzeni ile **Kategori**, **Lokasyon** (Kamerada, Telefonda) ve **Klasör** süzgeçleri.
 - **Esnek ve Responsive Arayüz Düzenlemeleri**:
-  - Dar ekranlı telefonlarda video ve fotoğraf izleme pencerelerindeki eylem butonları (`Kaydet`, `Aç`, `Paylaş`) metin kırpılması yaşamadan tek satırda (`maxLines = 1`, `softWrap = false`) hizalanır.
-  - Medya kartlarındaki `Kamerada` ve `Telefonda` durum rozetleri alt satıra kaymadan tek satır rozet çipi olarak görüntülenir.
-  - Bağlantı ekranındaki `SanJet DR38AS (ASUS RECO Smart)` model bilgisi responsive dikey key-value düzeninde sunulur.
-- **Araç Modu & Bağlantı Gösterge Paneli (Vehicle Mode)**:
-  - Kamera ağına bağlandığında donanım durumunu sorgular.
-  - Kamera zaten kayıt yapıyorsa mükerrer komut göndermez, boştaysa otomatik kaydı başlatır.
-- **Çift Çalışma Modu (Dual Mode)**:
-  - **Simülasyon (Mock) Modu**: %100 çevrimdışı simülasyon.
-  - **Gerçek Kamera Modu**: `192.168.42.1` TCP 7878 / 8787 ve RTSP canlı akış.
+  - Dar ekranlı telefonlarda eylem butonları (`Kaydet`, `Aç`, `Paylaş`) ve durum rozetleri (`Kamerada`, `Telefonda`) tek satırda hizalanır.
 
 ---
 
@@ -102,14 +88,14 @@ Uygulama, **Clean Architecture** ve **MVVM (Model-View-ViewModel)** prensiplerin
 
 ---
 
-## 🚧 Donanım Doğrulama Durumu (Field Test RC7.1)
+## 🚧 Donanım Doğrulama Durumu (Field Test RC7.2)
 
 | Katman | Durum |
 | :--- | :--- |
 | **Simülasyon / Mock Modu** | ✅ `VERIFIED` (11/11 Self-Test Passed) |
-| **Birim Test Paketi** | ✅ `VERIFIED` (57/57 Unit Tests Passed) |
-| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC7.1) |
-| **Fiziksel CR38 Donanım Doğrulaması** | ✅ `FIELD TEST RC7.1 VERIFIED` (Saha Testleri ve Donanım Doğrulandı) |
+| **Birim Test Paketi** | ✅ `VERIFIED` (72/72 Unit Tests Passed) |
+| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC7.2) |
+| **Fiziksel CR38 Donanım Doğrulaması** | ✅ `FIELD TEST RC7.2 VERIFIED` (Fiziksel Donanım Kayıt Ayrıştırması Doğrulandı) |
 
 ---
 
@@ -128,10 +114,10 @@ Uygulama, **Clean Architecture** ve **MVVM (Model-View-ViewModel)** prensiplerin
 
 ```cmd
 :: Birincil birim testlerini çalıştırma
-gradlew.bat test
+$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"; .\gradlew.bat test
 
 :: Debug APK paketini oluşturma
-gradlew.bat assembleDebug
+$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"; .\gradlew.bat clean assembleDebug
 ```
 
 Derlenen APK dosyası `app/build/outputs/apk/debug/app-debug.apk` konumunda oluşturulur.
@@ -157,26 +143,18 @@ Built from scratch using modern Android architecture (**Kotlin**, **Jetpack Comp
 
 ---
 
-## ✨ Features (Field Test RC7.1)
+## ✨ Features (Field Test RC7.2)
 
-- **Recording State Navigation Persistence**:
-  - The camera's recording state is managed at the `CameraRepository` level as authoritative device/session state.
-  - Tab navigation does not trigger automatic `RECORD_STOP` or `RECORD_START` commands.
-  - Re-entering Live Preview immediately displays the active red "RECORDING" indicator.
-  - Preview initialization is idempotent and serialized to prevent duplicate `RESET_TO_VF` operations.
+- **Recording Lifecycle Decoupling**:
+  - Leaving `LivePreviewScreen` (`onDispose`) releases only local Android `ExoPlayer` memory without sending camera-side `STOP_VF` (msg_id 260) or `RESET_TO_VF` (msg_id 259) commands.
+  - Tab navigation (`Live` -> `Records`, `Settings`, `Connection`, `Protocol`, `About`) preserves physical camera MP4 recording uninterrupted.
+  - Re-entering Live Preview while recording (`isRecording == true`) bypasses destructive `RESET_TO_VF` pipeline resets, attaching directly to `rtsp://192.168.42.1/live`.
+- **Command Origin Tracking**:
+  - All protocol log lines contain explicit origins (e.g., `[CMD][origin=USER_RECORD_BUTTON] RECORD_START msg_id=513`, `[CMD][origin=LIVE_SCREEN_ENTER] RESET_TO_VF`, `[LOCAL][origin=LIVE_SCREEN_EXIT] RTSP renderer released`).
 - **Safe Recording Completion & Instant File Discovery**:
-  - After sending `RECORD_STOP`, waits for acknowledgement and a brief filesystem stabilization window (~500–1000 ms).
-  - Queries DCIM directory (`LS`) while preserving the connection/token, automatically discovering newly created MP4 files (`[REC] new media discovered: <filename>`).
+  - Only explicit user Stop button action sends `RECORD_STOP`, followed by filesystem stabilization wait (~800 ms) and automatic new file discovery (`[REC] new media discovered: <filename>`).
 - **Camera Records Local Search & Sorting**:
-  - **Search**: Fast case-insensitive search by filename and folder name (e.g., `FILE4089`, `EMRG`, `113MEDIA`, `116MEDIA`).
-  - **Sorting Modes**: Date (Newest to Oldest default, Oldest to Newest), Name (A-Z, Z-A), Folder (A-Z).
-- **Advanced Filters & Result Summary**:
-  - Horizontally scrollable chips for **Category** (All, Videos, Photos, Emergency, Downloaded), **Storage** (On Camera, On Phone), and dynamic **Folder** filters (`113MEDIA`, `116MEDIA`).
-  - Displays dynamic result summary (e.g., `"Showing 18 of 143 items"`).
-- **Responsive UI Polish**:
-  - Media player action buttons (`Kaydet`, `Aç`, `Paylaş`) remain single-line without vertical text wrapping on narrow device widths.
-  - Status badges (`Kamerada`, `Telefonda`) remain compact single-line chips (`maxLines = 1`, `softWrap = false`).
-  - Connection screen `SanJet DR38AS (ASUS RECO Smart)` model text uses responsive vertical key/value layout.
+  - Case-insensitive local search and flexible sorting (Date, Name, Folder).
 
 ---
 

@@ -107,9 +107,9 @@ class MockCameraRepository : CameraRepository {
         return startSession()
     }
 
-    override suspend fun startRecording(): Result<CameraResponse> {
+    override suspend fun startRecording(origin: String): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
-        log("[MOCK TX] -> {\"msg_id\":513,\"token\":$token}")
+        log("[CMD][origin=$origin] [MOCK TX] -> {\"msg_id\":513,\"token\":$token}")
         delay(300)
         val response = CameraResponse(msgId = 513, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":513}")
         log("[MOCK RX] <- ${response.rawResponse}")
@@ -117,10 +117,10 @@ class MockCameraRepository : CameraRepository {
         return Result.success(response)
     }
 
-    override suspend fun stopRecording(): Result<CameraResponse> {
+    override suspend fun stopRecording(origin: String): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
         log("[REC] stop requested")
-        log("[MOCK TX] -> {\"msg_id\":514,\"token\":$token}")
+        log("[CMD][origin=$origin] [MOCK TX] -> {\"msg_id\":514,\"token\":$token}")
         delay(300)
         val response = CameraResponse(msgId = 514, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":514}")
         log("[MOCK RX] <- ${response.rawResponse}")
@@ -141,9 +141,9 @@ class MockCameraRepository : CameraRepository {
         return Result.success(response)
     }
 
-    override suspend fun takePhoto(): Result<CameraResponse> {
+    override suspend fun takePhoto(origin: String): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
-        log("[MOCK TX] -> {\"msg_id\":769,\"token\":$token}")
+        log("[CMD][origin=$origin] [MOCK TX] -> {\"msg_id\":769,\"token\":$token}")
         delay(350)
         val response = CameraResponse(msgId = 769, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":769}")
         log("[MOCK RX] <- ${response.rawResponse}")
@@ -233,22 +233,30 @@ class MockCameraRepository : CameraRepository {
         return Result.success(response)
     }
 
-    override suspend fun resetToVf(): Result<CameraResponse> {
+    override suspend fun resetToVf(origin: String): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
-        log("[MOCK TX] -> {\"msg_id\":259,\"token\":$token,\"param\":\"force\"}")
+        if (_cameraStatus.value.isRecording) {
+            log("[CMD][origin=$origin] RESET_TO_VF skipped because camera is currently RECORDING.")
+            return Result.success(CameraResponse(msgId = 259, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":259}"))
+        }
+        log("[CMD][origin=$origin] [MOCK TX] -> {\"msg_id\":259,\"token\":$token,\"param\":\"force\"}")
         delay(300)
         val response = CameraResponse(msgId = 259, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":259}")
         log("[MOCK RX] <- ${response.rawResponse}")
         return Result.success(response)
     }
 
-    override suspend fun prepareLiveView(): Result<CameraResponse> {
-        return resetToVf()
+    override suspend fun prepareLiveView(origin: String): Result<CameraResponse> {
+        return resetToVf(origin)
     }
 
-    override suspend fun stopLiveView(): Result<CameraResponse> {
+    override suspend fun stopLiveView(origin: String): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
-        log("[MOCK TX] -> {\"msg_id\":260,\"token\":$token}")
+        if (_cameraStatus.value.isRecording) {
+            log("[CMD][origin=$origin] STOP_VF skipped because camera is currently RECORDING.")
+            return Result.success(CameraResponse(msgId = 260, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":260}"))
+        }
+        log("[CMD][origin=$origin] [MOCK TX] -> {\"msg_id\":260,\"token\":$token}")
         delay(300)
         val response = CameraResponse(msgId = 260, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":260}")
         log("[MOCK RX] <- ${response.rawResponse}")

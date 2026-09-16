@@ -139,7 +139,7 @@ fun LivePreviewScreen(
                 localPlayer?.stop()
                 localPlayer?.release()
                 exoPlayer = null
-                viewModel.stopLiveView()
+                viewModel.logRtsp("[LOCAL][origin=LIVE_SCREEN_EXIT] RTSP renderer released. Physical recording state preserved.")
             }
         } else {
             onDispose { }

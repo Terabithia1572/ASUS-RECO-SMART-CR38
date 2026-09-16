@@ -17,18 +17,18 @@ interface CameraRepository {
     suspend fun disconnect()
     suspend fun startSession(): Result<Int>
     suspend fun recoverSession(): Result<Int>
-    suspend fun startRecording(): Result<CameraResponse>
-    suspend fun stopRecording(): Result<CameraResponse>
-    suspend fun takePhoto(): Result<CameraResponse>
+    suspend fun startRecording(origin: String = "UNKNOWN"): Result<CameraResponse>
+    suspend fun stopRecording(origin: String = "UNKNOWN"): Result<CameraResponse>
+    suspend fun takePhoto(origin: String = "UNKNOWN"): Result<CameraResponse>
     suspend fun fetchAllSettings(): Result<List<CameraSetting>>
     suspend fun updateSetting(key: String, value: String): Result<CameraResponse>
     suspend fun listFiles(path: String = CameraStatus.DEFAULT_DCIM_PATH): Result<List<CameraFile>>
     suspend fun deleteFile(filePath: String): Result<CameraResponse>
     suspend fun formatSdCard(): Result<CameraResponse>
     suspend fun factoryReset(): Result<CameraResponse>
-    suspend fun resetToVf(): Result<CameraResponse>
-    suspend fun prepareLiveView(): Result<CameraResponse>
-    suspend fun stopLiveView(): Result<CameraResponse>
+    suspend fun resetToVf(origin: String = "UNKNOWN"): Result<CameraResponse>
+    suspend fun prepareLiveView(origin: String = "UNKNOWN"): Result<CameraResponse>
+    suspend fun stopLiveView(origin: String = "UNKNOWN"): Result<CameraResponse>
     suspend fun takePhotoPiv(): Result<CameraResponse>
     suspend fun getDeviceInformation(): Result<CameraResponse>
     suspend fun getAppStatus(): Result<com.asus.recosmart.domain.model.DeviceStatus>

@@ -231,8 +231,9 @@ class DefaultCameraRepository : CameraRepository {
         }
     }
 
-    override suspend fun startRecording(): Result<CameraResponse> {
-        if (_isMockMode.value) return mockRepository.startRecording()
+    override suspend fun startRecording(origin: String): Result<CameraResponse> {
+        if (_isMockMode.value) return mockRepository.startRecording(origin)
+        tcpClient.log("[CMD][origin=$origin] RECORD_START msg_id=513")
         val result = sendCommandInternal(CameraCommand.RecordStart)
         if (result.getOrNull()?.isSuccess == true) {
             _cameraStatus.value = _cameraStatus.value.copy(isRecording = true)
@@ -240,9 +241,9 @@ class DefaultCameraRepository : CameraRepository {
         return result
     }
 
-    override suspend fun stopRecording(): Result<CameraResponse> {
-        if (_isMockMode.value) return mockRepository.stopRecording()
-        tcpClient.log("[REC] stop requested")
+    override suspend fun stopRecording(origin: String): Result<CameraResponse> {
+        if (_isMockMode.value) return mockRepository.stopRecording(origin)
+        tcpClient.log("[CMD][origin=$origin] RECORD_STOP requested msg_id=514")
         val result = sendCommandInternal(CameraCommand.RecordStop)
         if (result.getOrNull()?.isSuccess == true) {
             tcpClient.log("[REC] RECORD_STOP acknowledged")
@@ -264,8 +265,9 @@ class DefaultCameraRepository : CameraRepository {
         return result
     }
 
-    override suspend fun takePhoto(): Result<CameraResponse> {
-        if (_isMockMode.value) return mockRepository.takePhoto()
+    override suspend fun takePhoto(origin: String): Result<CameraResponse> {
+        if (_isMockMode.value) return mockRepository.takePhoto(origin)
+        tcpClient.log("[CMD][origin=$origin] TAKE_PHOTO msg_id=769")
         return sendCommandInternal(CameraCommand.TakePhoto)
     }
 
@@ -371,16 +373,28 @@ class DefaultCameraRepository : CameraRepository {
         return sendCommandInternal(CameraCommand.SetSetting("factory default", "on"))
     }
 
-    override suspend fun resetToVf(): Result<CameraResponse> {
-        if (_isMockMode.value) return mockRepository.resetToVf()
+    override suspend fun resetToVf(origin: String): Result<CameraResponse> {
+        if (_isMockMode.value) return mockRepository.resetToVf(origin)
+        if (_cameraStatus.value.isRecording) {
+            tcpClient.log("[CMD][origin=$origin] RESET_TO_VF skipped because camera is currently RECORDING.")
+            return Result.success(CameraResponse(msgId = 259, rval = 0))
+        }
+        tcpClient.log("[CMD][origin=$origin] RESET_TO_VF msg_id=259")
         return sendCommandInternal(CameraCommand.ResetToVf)
     }
 
-    override suspend fun prepareLiveView(): Result<CameraResponse> {
-        if (_isMockMode.value) return mockRepository.prepareLiveView()
+    override suspend fun prepareLiveView(origin: String): Result<CameraResponse> {
+        if (_isMockMode.value) return mockRepository.prepareLiveView(origin)
 
         tcpClient.log("==================================================")
-        tcpClient.log("[LIVE INIT] Starting legacy viewfinder initialization sequence...")
+        tcpClient.log("[CMD][origin=$origin] [LIVE INIT] Starting viewfinder preparation...")
+
+        if (_cameraStatus.value.isRecording) {
+            tcpClient.log("[LIVE INIT][origin=$origin] Camera is currently RECORDING. Bypassing STOP_VF and RESET_TO_VF to preserve active recording session.")
+            tcpClient.log("[LIVE INIT 6/6 PASS] RTSP URL ready: ${CameraStatus.DEFAULT_RTSP_URL}")
+            tcpClient.log("==================================================")
+            return Result.success(CameraResponse(msgId = 259, rval = 0))
+        }
 
         // Stage 1: Load current settings
         tcpClient.log("[LIVE INIT 1/6] GET_ALL_CURRENT_SETTINGS (msg_id 3)...")
@@ -392,7 +406,7 @@ class DefaultCameraRepository : CameraRepository {
         }
 
         // Stage 2: Stop existing VF stream if any (STOP_VF msg_id 260)
-        tcpClient.log("[LIVE INIT 2/6] STOP_VF (msg_id 260)...")
+        tcpClient.log("[LIVE INIT 2/6][origin=$origin] STOP_VF (msg_id 260)...")
         val stopVfRes = sendCommandInternal(CameraCommand.StopVf)
         if (stopVfRes.isFailure) {
             tcpClient.log("[LIVE INIT 2/6 NOTICE] STOP_VF notice: ${stopVfRes.exceptionOrNull()?.localizedMessage}")
@@ -421,7 +435,7 @@ class DefaultCameraRepository : CameraRepository {
         delay(1000)
 
         // Stage 5: Reset VF (RESET_TO_VF msg_id 259 param force)
-        tcpClient.log("[LIVE INIT 5/6] RESET_TO_VF force (msg_id 259)...")
+        tcpClient.log("[LIVE INIT 5/6][origin=$origin] RESET_TO_VF force (msg_id 259)...")
         val resetVfRes = sendCommandInternal(CameraCommand.ResetToVf)
         if (resetVfRes.isFailure || resetVfRes.getOrNull()?.isSuccess != true) {
             val err = resetVfRes.exceptionOrNull()?.localizedMessage ?: "RESET_TO_VF rejected (rval=${resetVfRes.getOrNull()?.rval})"
@@ -439,8 +453,13 @@ class DefaultCameraRepository : CameraRepository {
         return resetVfRes
     }
 
-    override suspend fun stopLiveView(): Result<CameraResponse> {
-        if (_isMockMode.value) return mockRepository.stopLiveView()
+    override suspend fun stopLiveView(origin: String): Result<CameraResponse> {
+        if (_isMockMode.value) return mockRepository.stopLiveView(origin)
+        if (_cameraStatus.value.isRecording) {
+            tcpClient.log("[CMD][origin=$origin] STOP_VF skipped because camera is currently RECORDING.")
+            return Result.success(CameraResponse(msgId = 260, rval = 0))
+        }
+        tcpClient.log("[CMD][origin=$origin] STOP_VF msg_id=260")
         return sendCommandInternal(CameraCommand.StopVf)
     }
 

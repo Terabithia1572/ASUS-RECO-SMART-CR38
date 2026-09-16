@@ -52,6 +52,13 @@ class LivePreviewViewModel(
                 return@launch
             }
 
+            if (cameraStatus.value.isRecording) {
+                _statusText.value = "Canlı görüntüye bağlanılıyor (Kayıt Aktif)..."
+                repository.logRtsp("[VF INIT][LIVE_SCREEN_ENTER] Camera is currently RECORDING. Re-attaching RTSP stream directly without resetting viewfinder.")
+                onResult(true, null)
+                return@launch
+            }
+
             if (sessionState.value !is SessionState.Connected) {
                 _statusText.value = "Oturum yenileniyor..."
                 repository.logRtsp("[VF INIT] Session not connected. Running 1-shot recovery...")
@@ -59,7 +66,7 @@ class LivePreviewViewModel(
             }
 
             _statusText.value = "Viewfinder hazırlanıyor (RESET_TO_VF)..."
-            var res = repository.prepareLiveView()
+            var res = repository.prepareLiveView("LIVE_SCREEN_ENTER")
 
             if (res.isFailure) {
                 repository.logRtsp("[VF INIT NOTICE] Viewfinder prep failed. Running 1-shot recovery...")
@@ -67,7 +74,7 @@ class LivePreviewViewModel(
                 val recRes = repository.recoverSession()
                 if (recRes.isSuccess) {
                     _statusText.value = "Viewfinder yeniden hazırlanıyor..."
-                    res = repository.prepareLiveView()
+                    res = repository.prepareLiveView("LIVE_SCREEN_ENTER")
                 }
             }
 
@@ -84,10 +91,10 @@ class LivePreviewViewModel(
         }
     }
 
-    fun stopLiveView() {
+    fun stopLiveView(origin: String = "LIVE_SCREEN_EXIT") {
         viewModelScope.launch {
             if (!isMockMode.value && sessionState.value is SessionState.Connected) {
-                repository.stopLiveView()
+                repository.stopLiveView(origin)
             }
         }
     }
@@ -102,11 +109,11 @@ class LivePreviewViewModel(
                 val isRecording = cameraStatus.value.isRecording
                 if (isRecording) {
                     _statusText.value = "Kayıt durduruluyor..."
-                    val res = repository.stopRecording()
+                    val res = repository.stopRecording("USER_RECORD_BUTTON")
                     _statusText.value = if (res.isSuccess) "Kayıt durduruldu." else "Kayıt durdurulamadı."
                 } else {
                     _statusText.value = "Kayıt başlatılıyor..."
-                    val res = repository.startRecording()
+                    val res = repository.startRecording("USER_RECORD_BUTTON")
                     _statusText.value = if (res.isSuccess) "Kayıt başladı." else "Kayıt başlatılamadı."
                 }
             } finally {
@@ -127,7 +134,7 @@ class LivePreviewViewModel(
                     _statusText.value = if (res.isSuccess) "Kayıt sırasında fotoğraf çekildi." else "Fotoğraf çekilemedi."
                 } else {
                     _statusText.value = "Fotoğraf çekiliyor..."
-                    val res = repository.takePhoto()
+                    val res = repository.takePhoto("USER_PHOTO_BUTTON")
                     _statusText.value = if (res.isSuccess) "Fotoğraf çekildi." else "Fotoğraf çekilemedi."
                 }
             } finally {

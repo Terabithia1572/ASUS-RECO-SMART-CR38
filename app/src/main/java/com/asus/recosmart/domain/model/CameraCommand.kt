@@ -21,7 +21,7 @@ sealed class CameraCommand(val msgId: Int, val commandName: String) {
     object FormatSdCard : CameraCommand(4, "FORMAT")
 
     data class DeleteFile(val filePath: String) : CameraCommand(1281, "DEL_FILE")
-    data class ListFiles(val path: String = "/tmp/fuse_d/DCIM/") : CameraCommand(1282, "LS")
+    data class ListFiles(val path: String = "") : CameraCommand(1282, "LS")
     data class ChangeDir(val path: String) : CameraCommand(1283, "CD")
 
     object GetDeviceInfo : CameraCommand(11, "GET_DEVICE_INFORMATION")

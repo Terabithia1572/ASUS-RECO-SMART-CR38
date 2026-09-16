@@ -35,4 +35,5 @@ interface CameraRepository {
     fun toggleMockMode(enabled: Boolean)
     fun clearDebugLogs()
     fun logRtsp(message: String)
+    fun setFirstVideoFrameRendered(rendered: Boolean)
 }

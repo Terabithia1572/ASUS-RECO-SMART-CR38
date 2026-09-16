@@ -156,8 +156,28 @@ Proje, fiziksel kamera donanımına ihtiyaç duyulmadan geliştirme ve arayüz t
 | Katman | Durum |
 | :--- | :--- |
 | **Simülasyon / Mock Modu** | ✅ `VERIFIED` (11/11 Self-Test Passed) |
-| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC1) |
-| **Fiziksel ASUS CR38 Donanım Testi** | ⏳ `FIELD TEST PENDING / UNVERIFIED` |
+| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC5) |
+| **Fiziksel ASUS CR38 Donanım Doğrulaması** | ✅ `FIELD TEST RC5 VERIFIED` (Gerçek Donanım Doğrulandı) |
+
+---
+
+## 🎯 Saha Testi & Gerçek Donanım Sonuçları (Field Test RC5)
+
+Gerçek **ASUS RECO Smart CR38 / SanJet DR38AS** donanımı üzerinde gerçekleştirilen saha testlerinde aşağıdaki özellikler doğrulanmış ve optimize edilmiştir:
+
+1. **İletişim & Oturum Protokolü (Port 7878 & 8787)**:
+   - `START_SESSION` donanım oturumu başlatma ve dinamik token alımı.
+   - İkincil TCP Veri Kanalı (8787) otomatik el sıkışması.
+   - `GET_DEVICE_INFORMATION` cihaz donanım ve yazılım bilgileri okuması (`SanJet DR38AS`, API `2.8.00`).
+2. **RTSP Canlı Yayın**:
+   - `rtsp://192.168.42.1/live` üzerinden kesintisiz canlı görüntü akışı.
+3. **Kamera Dosya Sistemi & Medya Aktarımı**:
+   - `/tmp/fuse_d/DCIM/` altındaki tüm klasörlerin (`100MEDIA`, `113MEDIA`, `116MEDIA` vb.) ve `EMRG` acil durum videolarının taranması.
+   - HTTP canlı medya akışı ve fotoğrafların uygulama içi izleyicide görüntülenmesi.
+   - **Medya İndirme & Dışa Aktarma (RC5)**: Fotoğraf ve videoların telefon hafızasındaki galeriye (`Movies/ASUS RECO Smart/` ve `Pictures/ASUS RECO Smart/`) doğrudan indirilmesi, dış medya oynatıcılarda açılması (`ACTION_VIEW`) ve sistem paylaşım menüsü (`ACTION_SEND` Sharesheet) ile iletilmesi.
+4. **Çözünürlük Değişimi & HDR Gerçekliği**:
+   - Kayıt esnasında çözünürlük değiştirildiğinde `RECORD_STOP` -> `SET_SETTING` -> `GET_ALL_CURRENT_SETTINGS` doğrulaması -> `RECORD_START` döngüsü ile encoder güvenliği.
+   - **HDR Ayar Doğrulaması**: CR38 donanımının `HDR 1920x1080 30P 16:9` komutuna `rval=0` döndürmesine rağmen donanımsal olarak eski çözünürlüğü koruduğu saha testinde kanıtlanmış, seçenek arayüzde "Doğrulanmadı / CR38 Desteklemiyor" olarak etiketlenmiştir.
 
 ---
 
@@ -362,8 +382,28 @@ Includes a complete **Mock Camera Engine** for UI testing without physical hardw
 | Component | Status |
 | :--- | :--- |
 | **Mock Simulator Engine** | ✅ `VERIFIED` (11/11 Self-Test Passed) |
-| **Android Build & Test Suite** | ✅ `VERIFIED` (Clean Build RC1) |
-| **Physical ASUS CR38 Validation** | ⏳ `FIELD TEST PENDING / UNVERIFIED` |
+| **Android Build & Test Suite** | ✅ `VERIFIED` (Clean Build RC5) |
+| **Physical ASUS CR38 Hardware Verification** | ✅ `FIELD TEST RC5 VERIFIED` (Physical Hardware Confirmed) |
+
+---
+
+## 🎯 Field Test & Physical Hardware Results (Field Test RC5)
+
+The following features were verified and optimized on physical **ASUS RECO Smart CR38 / SanJet DR38AS** hardware:
+
+1. **Protocol & Session Stack (Ports 7878 & 8787)**:
+   - Hardware `START_SESSION` handshake and dynamic token acquisition.
+   - Secondary TCP data socket (8787) automatic binding.
+   - Hardware/firmware info retrieval (`SanJet DR38AS`, API `2.8.00`).
+2. **RTSP Live Preview**:
+   - `rtsp://192.168.42.1/live` low-latency stream.
+3. **Camera Filesystem & Media Export (RC5)**:
+   - Full DCIM directory enumeration (`100MEDIA`, `113MEDIA`, `116MEDIA`, etc.) and `EMRG` video detection.
+   - **MediaStore Export**: Direct download of photos and videos to local Android storage (`Movies/ASUS RECO Smart/` and `Pictures/ASUS RECO Smart/`).
+   - **External App Playback & Share**: `ACTION_VIEW` launch for external video players and `ACTION_SEND` Sharesheet support via `FileProvider` `content://` URIs.
+4. **Resolution Switching & HDR Behavior**:
+   - Safe recording-aware resolution switching workflow (`RECORD_STOP` -> `SET_SETTING` -> verify -> `RECORD_START`).
+   - **HDR Reality Fix**: Physical CR38 hardware returns `rval=0` for `HDR 1920x1080 30P 16:9` but retains existing resolution; marked as "Unverified / Unsupported on CR38" in settings.
 
 ---
 

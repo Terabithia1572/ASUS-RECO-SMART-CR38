@@ -27,6 +27,13 @@ class LivePreviewViewModel(
         repository.logRtsp(message)
     }
 
+    fun setFirstVideoFrameRendered(rendered: Boolean) {
+        repository.setFirstVideoFrameRendered(rendered)
+        if (rendered) {
+            _statusText.value = "Canlı görüntü aktif."
+        }
+    }
+
     fun prepareLiveView(onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             if (isMockMode.value) {

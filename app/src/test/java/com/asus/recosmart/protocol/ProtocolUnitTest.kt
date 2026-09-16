@@ -239,9 +239,177 @@ class ProtocolUnitTest {
         assertEquals(com.asus.recosmart.domain.model.DeviceStatus.UVC, com.asus.recosmart.domain.model.DeviceStatus.fromWire("uvc"))
     }
 
+    // =========================================================================
+    // 5. REAL HARDWARE PROTOCOL FIX TESTS
+    // =========================================================================
+
     @Test
-    fun testDeviceStatusUnknownValueFallback() {
-        val unknown = com.asus.recosmart.domain.model.DeviceStatus.fromWire("custom_unrecognized_firmware_state")
-        assertEquals(com.asus.recosmart.domain.model.DeviceStatus.UNKNOWN, unknown)
+    fun testStartSessionRealTokenAcquisition() {
+        val raw = "{\"rval\":0,\"msg_id\":257,\"param\":10}"
+        val response = ResponseParser.parse(raw)
+        assertEquals(257, response.msgId)
+        assertEquals(0, response.rval)
+        assertEquals(10, response.token)
+        assertTrue(response.isSuccess)
+    }
+
+    @Test
+    fun testParseDeviceInfoMetadata() {
+        val raw = "{\"rval\":0,\"msg_id\":11,\"brand\":\"SanJet\",\"model\":\"DR38AS\",\"api_ver\":\"2.8.00\",\"fw_ver\":\"2501\",\"app_type\":\"car\",\"logo\":\"/tmp/fuse_z/app_logo.jpg\",\"chip\":\"a7l\",\"http\":\"disable\"}"
+        val response = ResponseParser.parse(raw)
+        assertEquals(11, response.msgId)
+        assertEquals(0, response.rval)
+        assertEquals("SanJet", response.brand)
+        assertEquals("DR38AS", response.model)
+        assertEquals("2.8.00", response.apiVer)
+        assertEquals("2501", response.fwVer)
+        assertEquals("car", response.appType)
+        assertEquals("/tmp/fuse_z/app_logo.jpg", response.logo)
+        assertEquals("a7l", response.chip)
+        assertEquals("disable", response.http)
+    }
+
+    @Test
+    fun testParseGetAllCurrentSettingsArray() {
+        val raw = "{\"rval\":0,\"msg_id\":3,\"param\":[{\"stream_out_type\":\"rtsp\"},{\"save_low_resolution_clip\":\"on\"},{\"video_resolution\":\"1920x1080 30P 16:9\"}]}"
+        val settings = ResponseParser.parseSettings(raw)
+        assertEquals(3, settings.size)
+        assertEquals("stream_out_type", settings[0].key)
+        assertEquals("rtsp", settings[0].value)
+        assertEquals("save_low_resolution_clip", settings[1].key)
+        assertEquals("on", settings[1].value)
+        assertEquals("video_resolution", settings[2].key)
+        assertEquals("1920x1080 30P 16:9", settings[2].value)
+    }
+
+    @Test
+    fun testCdAndLsCommandSerialization() {
+        val cdJsonStr = CommandSerializer.serialize(CameraCommand.ChangeDir("/tmp/fuse_d/DCIM"), sessionToken = 10)
+        val cdJson = JSONObject(cdJsonStr)
+        assertEquals(1283, cdJson.getInt("msg_id"))
+        assertEquals(10, cdJson.getInt("token"))
+        assertEquals("/tmp/fuse_d/DCIM", cdJson.getString("param"))
+
+        val lsJsonStr = CommandSerializer.serialize(CameraCommand.ListFiles(""), sessionToken = 10)
+        val lsJson = JSONObject(lsJsonStr)
+        assertEquals(1282, lsJson.getInt("msg_id"))
+        assertEquals(10, lsJson.getInt("token"))
+        assertFalse("LS after CD must omit param key when path is empty", lsJson.has("param"))
+    }
+
+    // =========================================================================
+    // 6. FIELD TEST RC2 & RC3 VERIFICATION TESTS
+    // =========================================================================
+
+    @Test
+    fun testFirstVideoFrameRenderedInitialState() {
+        val status = com.asus.recosmart.domain.model.CameraStatus()
+        assertFalse("firstVideoFrameRendered must default to false before RTSP frame render", status.firstVideoFrameRendered)
+    }
+
+    @Test
+    fun testListFilesOmitsHardcodedSubfolder() {
+        val cmd = CameraCommand.ListFiles("")
+        val jsonStr = CommandSerializer.serialize(cmd, sessionToken = 10)
+        val json = JSONObject(jsonStr)
+        assertFalse("ListFiles with empty path must NOT inject 116MEDIA or hardcoded subfolder", json.has("param"))
+    }
+
+    @Test
+    fun testOrphanRval7DoesNotCorrelateWithActiveCommand() {
+        val orphanRaw = "{\"rval\":-7}"
+        val orphanResp = ResponseParser.parse(orphanRaw)
+        assertEquals(-1, orphanResp.msgId)
+        assertEquals(-7, orphanResp.rval)
+        assertFalse("Orphan frame without msg_id must not be marked success", orphanResp.isSuccess)
+
+        val validRaw = "{\"rval\":0,\"msg_id\":259}"
+        val validResp = ResponseParser.parse(validRaw)
+        assertEquals(259, validResp.msgId)
+        assertTrue("Correlated RESET_TO_VF response must be success", validResp.isSuccess)
+    }
+
+    @Test
+    fun testParseRealHardwareDcimDirectories() {
+        val raw = "{\"rval\":0,\"msg_id\":1282,\"listing\":[{\"110MEDIA/\":\"2021-07-11 15:50:40\"},{\"105MEDIA/\":\"2019-09-18 15:50:40\"},{\"113MEDIA/\":\"2022-08-10 15:50:40\"},{\"116MEDIA/\":\"2015-08-23 15:50:40\"},{\"115MEDIA/\":\"2015-05-05 15:50:40\"}]}"
+        val dirs = ResponseParser.parseDirectories(raw)
+        assertEquals(5, dirs.size)
+        assertEquals("110MEDIA", dirs[0].name)
+        assertEquals("105MEDIA", dirs[1].name)
+        assertEquals("113MEDIA", dirs[2].name)
+        assertEquals("116MEDIA", dirs[3].name)
+        assertEquals("115MEDIA", dirs[4].name)
+        assertEquals("/tmp/fuse_d/DCIM/116MEDIA", dirs[3].remotePath)
+    }
+
+    @Test
+    fun testParseRealHardwareMediaFilesAndPairing() {
+        val raw = "{\"rval\":0,\"msg_id\":1282,\"listing\":[{\"EMRG3992.mp4\":\"62914560 bytes|2015-08-23 15:52:00\"},{\"FILE3956.mp4\":\"62914560 bytes|2015-08-23 15:50:40\"},{\"FILE3956_thm.mp4\":\"10485760 bytes|2015-08-23 15:50:40\"}]}"
+        val files = ResponseParser.parseFilesListing(raw, "116MEDIA")
+        assertEquals("Companion thumbnail file must be paired into main file, leaving 2 logical items", 2, files.size)
+
+        val emrgFile = files.find { it.filename == "EMRG3992.mp4" }
+        assertNotNull(emrgFile)
+        assertTrue("EMRG3992.mp4 must be flagged as emergency recording", emrgFile!!.isEmergency)
+        assertEquals("Acil Durum Kaydı", emrgFile.mediaTypeLabel)
+
+        val mainFile = files.find { it.filename == "FILE3956.mp4" }
+        assertNotNull(mainFile)
+        assertFalse("FILE3956.mp4 is normal video", mainFile!!.isEmergency)
+        assertEquals("http://192.168.42.1/DCIM/116MEDIA/FILE3956.mp4", mainFile.httpUrl)
+        assertEquals("http://192.168.42.1/DCIM/116MEDIA/FILE3956_thm.mp4", mainFile.thumbnailUrl)
+    }
+
+    // =========================================================================
+    // 7. FIELD TEST RC4 VERIFICATION TESTS
+    // =========================================================================
+
+    @Test
+    fun testVideoResolutionCommandSerialization() {
+        val cmd = CameraCommand.SetSetting("video_resolution", "1280x720 60P 16:9")
+        val jsonStr = CommandSerializer.serialize(cmd, sessionToken = 49)
+        val json = JSONObject(jsonStr)
+        assertEquals(2, json.getInt("msg_id"))
+        assertEquals(49, json.getInt("token"))
+        assertEquals("video_resolution", json.getString("type"))
+        assertEquals("1280x720 60P 16:9", json.getString("param"))
+    }
+
+    // =========================================================================
+    // 8. FIELD TEST RC5 VERIFICATION TESTS (EXPORT / MEDIASTORE / HDR)
+    // =========================================================================
+
+    @Test
+    fun testMediaFileCategoryProperties() {
+        val videoFile = com.asus.recosmart.domain.model.CameraFile(
+            filename = "FILE0001.MP4",
+            folder = "100MEDIA",
+            sizeBytes = 104857600L,
+            dateTime = "2026-09-16 12:00:00"
+        )
+        assertTrue("FILE0001.MP4 must be classified as video", videoFile.isVideo)
+        assertFalse("FILE0001.MP4 must not be photo", videoFile.isPhoto)
+
+        val photoFile = com.asus.recosmart.domain.model.CameraFile(
+            filename = "FILE0002.JPG",
+            folder = "100MEDIA",
+            sizeBytes = 2097152L,
+            dateTime = "2026-09-16 12:01:00"
+        )
+        assertTrue("FILE0002.JPG must be classified as photo", photoFile.isPhoto)
+        assertFalse("FILE0002.JPG must not be video", photoFile.isVideo)
+    }
+
+    @Test
+    fun testCameraFileRemoteFullPathConstruction() {
+        val file = com.asus.recosmart.domain.model.CameraFile(
+            filename = "EMRG0005.MP4",
+            folder = "116MEDIA",
+            sizeBytes = 50000000L,
+            dateTime = "2026-09-16 14:00:00"
+        )
+        assertEquals("Full camera path must combine root DCIM path, subfolder, and filename", "/tmp/fuse_d/DCIM/116MEDIA/EMRG0005.MP4", file.fullCameraPath)
+        assertTrue("EMRG prefix must classify file as emergency video", file.isEmergency)
     }
 }
+

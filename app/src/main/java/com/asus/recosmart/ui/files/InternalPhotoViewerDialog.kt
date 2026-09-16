@@ -1,0 +1,242 @@
+package com.asus.recosmart.ui.files
+
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.asus.recosmart.data.network.CameraNetworkManager
+import com.asus.recosmart.data.network.MediaDownloader
+import com.asus.recosmart.domain.model.CameraFile
+import com.asus.recosmart.ui.theme.DarkBackground
+import com.asus.recosmart.ui.theme.PrimaryCyan
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+
+@Composable
+fun InternalPhotoViewerDialog(
+    file: CameraFile,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var bitmapState by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var actionStatusText by remember { mutableStateOf<String?>(null) }
+    var downloadProgress by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(file.httpUrl) {
+        CameraNetworkManager.bindProcessToWifi(context)
+        withContext(Dispatchers.IO) {
+            try {
+                val url = URL(file.httpUrl)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                conn.doInput = true
+                conn.connect()
+                val input = conn.inputStream
+                val bitmap = BitmapFactory.decodeStream(input)
+                input.close()
+                conn.disconnect()
+
+                if (bitmap != null) {
+                    bitmapState = bitmap
+                } else {
+                    errorMessage = "Fotoğraf çözümlenemedi."
+                }
+            } catch (e: Exception) {
+                errorMessage = "Fotoğraf yüklenemedi: ${e.localizedMessage}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .wrapContentHeight()
+                .padding(8.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkBackground)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Fotoğraf Görüntüleyici",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryCyan
+                        )
+                        Text(
+                            text = "${file.filename} • ${file.folder}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Kapat", tint = Color.White)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Photo Container
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp)
+                        .background(Color.Black, shape = RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when {
+                        isLoading -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = PrimaryCyan)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Fotoğraf indiriliyor...", color = Color.White, fontSize = 12.sp)
+                            }
+                        }
+                        errorMessage != null -> {
+                            Text(
+                                text = errorMessage!!,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 13.sp
+                            )
+                        }
+                        bitmapState != null -> {
+                            Image(
+                                bitmap = bitmapState!!.asImageBitmap(),
+                                contentDescription = file.filename,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                }
+
+                if (!actionStatusText.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = actionStatusText!!,
+                        fontSize = 12.sp,
+                        color = PrimaryCyan
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Export Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                downloadProgress = 0
+                                actionStatusText = "Fotoğraf telefona indiriliyor (%0)..."
+                                val res = MediaDownloader.downloadToMediaStore(context, file) { pct ->
+                                    downloadProgress = pct
+                                    actionStatusText = "Fotoğraf telefona indiriliyor (%$pct)..."
+                                }
+                                if (res.isSuccess) {
+                                    actionStatusText = "Fotoğraf telefona kaydedildi!"
+                                } else {
+                                    actionStatusText = "İndirme başarısız: ${res.exceptionOrNull()?.localizedMessage}"
+                                }
+                                downloadProgress = -1
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = downloadProgress < 0,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryCyan)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Kaydet", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                actionStatusText = "Dış uygulama için hazırlanıyor..."
+                                val cacheRes = MediaDownloader.getOrCacheFile(context, file)
+                                if (cacheRes.isSuccess) {
+                                    actionStatusText = null
+                                    MediaDownloader.openInExternalApp(context, cacheRes.getOrThrow(), isVideo = false)
+                                } else {
+                                    actionStatusText = "Hazırlanamadı: ${cacheRes.exceptionOrNull()?.localizedMessage}"
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Aç", fontSize = 11.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                actionStatusText = "Paylaşım için hazırlanıyor..."
+                                val cacheRes = MediaDownloader.getOrCacheFile(context, file)
+                                if (cacheRes.isSuccess) {
+                                    actionStatusText = null
+                                    MediaDownloader.shareMedia(context, cacheRes.getOrThrow(), isVideo = false)
+                                } else {
+                                    actionStatusText = "Hazırlanamadı: ${cacheRes.exceptionOrNull()?.localizedMessage}"
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Paylaş", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}

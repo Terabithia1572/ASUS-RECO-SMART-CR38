@@ -69,7 +69,7 @@ fun ConnectionScreen(
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = "Field Test RC1",
+                            text = "Field Test RC4",
                             color = PrimaryCyan,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -261,6 +261,24 @@ fun ConnectionScreen(
                         },
                         fontWeight = FontWeight.Bold
                     )
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Kamera Modeli:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "${cameraStatus.brand} ${cameraStatus.model}",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (cameraStatus.firmwareVersion.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Yazılım Versiyonu (FW):", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = cameraStatus.firmwareVersion,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

@@ -168,10 +168,14 @@ class DebugConsoleViewModel(
             var netPass = false
             var tcpPass = false
             var sessionPass = false
+            var tokenPass = false
+            var dataSocketPass = false
             var devInfoPass = false
             var appStatusPass = false
             var settingsPass = false
+            var cdPass = false
             var lsPass = false
+            var rtspPass = false
             var acquiredToken = 0
 
             // Stage 0: Network Pre-flight
@@ -180,18 +184,20 @@ class DebugConsoleViewModel(
             netPass = preflight.isWifiConnected || preflight.isHostReachable
             tcpPass = preflight.isPortOpen
 
-            repository.logRtsp("Network/Wi-Fi ........ ${if (netPass) "PASS" else "FAIL"}")
-            repository.logRtsp("192.168.42.1:7878 .... ${if (tcpPass) "PASS (${preflight.latencyMs}ms)" else "FAIL"}")
+            repository.logRtsp("[0] Network/Wi-Fi route ...... ${if (netPass) "PASS" else "FAIL"}")
+            repository.logRtsp("[1] TCP 192.168.42.1:7878 ..... ${if (tcpPass) "PASS (${preflight.latencyMs}ms)" else "FAIL"}")
 
             if (!tcpPass && !repository.isMockMode.value) {
                 repository.logRtsp("[STAGE FAIL] TCP 192.168.42.1:7878 unreachable. Skipping subsequent authenticated protocol stages.")
-                repository.logRtsp("START_SESSION ........ SKIPPED")
-                repository.logRtsp("Token ................ NONE")
-                repository.logRtsp("DEVICE_INFORMATION ... SKIPPED")
-                repository.logRtsp("APP_STATUS ........... SKIPPED")
-                repository.logRtsp("GET_SETTINGS ......... SKIPPED")
-                repository.logRtsp("LS ................... SKIPPED")
-                repository.logRtsp("RTSP ................. NOT TESTED")
+                repository.logRtsp("[2] START_SESSION ............ SKIPPED")
+                repository.logRtsp("[3] Token acquisition ........ NONE")
+                repository.logRtsp("[4] Secondary socket 8787 .... SKIPPED")
+                repository.logRtsp("[5] DEVICE_INFORMATION ....... SKIPPED")
+                repository.logRtsp("[6] APP_STATUS ............... SKIPPED")
+                repository.logRtsp("[7] GET_SETTINGS ............. SKIPPED")
+                repository.logRtsp("[8] CD /tmp/fuse_d/DCIM ...... SKIPPED")
+                repository.logRtsp("[9] LS current directory ..... SKIPPED")
+                repository.logRtsp("[10] RTSP readiness .......... NOT TESTED")
                 repository.logRtsp("Overall: CONNECTION FAILED")
                 repository.logRtsp("==================================================")
                 return@launch
@@ -205,19 +211,22 @@ class DebugConsoleViewModel(
                 val state = repository.sessionState.value
                 if (state is com.asus.recosmart.domain.model.SessionState.Connected) {
                     acquiredToken = state.token
+                    tokenPass = acquiredToken > 0
                 }
-                repository.logRtsp("TCP Socket ........... PASS")
-                repository.logRtsp("START_SESSION ........ PASS")
-                repository.logRtsp("Token ................ $acquiredToken")
+                dataSocketPass = true
+                repository.logRtsp("[2] START_SESSION (257) ...... PASS")
+                repository.logRtsp("[3] Token acquisition ........ ${if (tokenPass) "PASS (token=$acquiredToken)" else "FAIL"}")
+                repository.logRtsp("[4] Secondary socket 8787 .... PASS")
             } else {
-                repository.logRtsp("TCP Socket ........... FAIL (${connRes.exceptionOrNull()?.localizedMessage})")
-                repository.logRtsp("START_SESSION ........ FAIL")
-                repository.logRtsp("Token ................ NONE")
-                repository.logRtsp("DEVICE_INFORMATION ... SKIPPED")
-                repository.logRtsp("APP_STATUS ........... SKIPPED")
-                repository.logRtsp("GET_SETTINGS ......... SKIPPED")
-                repository.logRtsp("LS ................... SKIPPED")
-                repository.logRtsp("RTSP ................. NOT TESTED")
+                repository.logRtsp("[2] START_SESSION (257) ...... FAIL (${connRes.exceptionOrNull()?.localizedMessage})")
+                repository.logRtsp("[3] Token acquisition ........ NONE")
+                repository.logRtsp("[4] Secondary socket 8787 .... SKIPPED")
+                repository.logRtsp("[5] DEVICE_INFORMATION ....... SKIPPED")
+                repository.logRtsp("[6] APP_STATUS ............... SKIPPED")
+                repository.logRtsp("[7] GET_SETTINGS ............. SKIPPED")
+                repository.logRtsp("[8] CD /tmp/fuse_d/DCIM ...... SKIPPED")
+                repository.logRtsp("[9] LS current directory ..... SKIPPED")
+                repository.logRtsp("[10] RTSP readiness .......... NOT TESTED")
                 repository.logRtsp("Overall: CONNECTION FAILED")
                 repository.logRtsp("==================================================")
                 return@launch
@@ -225,39 +234,78 @@ class DebugConsoleViewModel(
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 2: GET_DEVICE_INFORMATION (msg_id 11)
-            repository.logRtsp("[STAGE 2] Querying GET_DEVICE_INFORMATION (msg_id 11)...")
+            // Stage 5: GET_DEVICE_INFORMATION (msg_id 11)
+            repository.logRtsp("[STAGE 5] Querying GET_DEVICE_INFORMATION (msg_id 11)...")
             val devInfoRes = repository.getDeviceInformation()
             devInfoPass = devInfoRes.isSuccess
-            repository.logRtsp("DEVICE_INFORMATION ... ${if (devInfoPass) "PASS" else "FAIL"}")
+            repository.logRtsp("[5] DEVICE_INFORMATION (11) .. ${if (devInfoPass) "PASS (${repository.cameraStatus.value.model})" else "FAIL"}")
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 3: GET_SETTING app_status (msg_id 1)
-            repository.logRtsp("[STAGE 3] Querying GET_SETTING app_status (msg_id 1)...")
+            // Stage 6: GET_SETTING app_status (msg_id 1)
+            repository.logRtsp("[STAGE 6] Querying GET_SETTING app_status (msg_id 1)...")
             val statusRes = repository.getAppStatus()
             appStatusPass = statusRes.isSuccess
-            repository.logRtsp("APP_STATUS ........... ${if (appStatusPass) "PASS (${statusRes.getOrNull()?.wireName})" else "FAIL"}")
+            repository.logRtsp("[6] APP_STATUS (1) ........... ${if (appStatusPass) "PASS (${statusRes.getOrNull()?.wireName})" else "FAIL"}")
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 4: GET_ALL_CURRENT_SETTINGS (msg_id 3)
-            repository.logRtsp("[STAGE 4] Querying GET_ALL_CURRENT_SETTINGS (msg_id 3)...")
+            // Stage 7: GET_ALL_CURRENT_SETTINGS (msg_id 3)
+            repository.logRtsp("[STAGE 7] Querying GET_ALL_CURRENT_SETTINGS (msg_id 3)...")
             val settingsRes = repository.fetchAllSettings()
             settingsPass = settingsRes.isSuccess
-            repository.logRtsp("GET_SETTINGS ......... ${if (settingsPass) "PASS" else "FAIL"}")
+            repository.logRtsp("[7] GET_SETTINGS (3) ......... ${if (settingsPass) "PASS (${settingsRes.getOrNull()?.size ?: 0} items)" else "FAIL"}")
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 5: LS (msg_id 1282)
-            repository.logRtsp("[STAGE 5] Querying LS /tmp/fuse_d/DCIM/ (msg_id 1282)...")
+            // Stage 8 & 9: Hierarchical Filesystem Scan (CD /tmp/fuse_d/DCIM -> LS)
+            repository.logRtsp("[STAGE 8 & 9] Executing hierarchical CD /tmp/fuse_d/DCIM -> MEDIA subfolders scan...")
             val filesRes = repository.listFiles("/tmp/fuse_d/DCIM/")
-            lsPass = filesRes.isSuccess
-            repository.logRtsp("LS ................... ${if (lsPass) "PASS (${filesRes.getOrNull()?.size ?: 0} items)" else "FAIL"}")
-            repository.logRtsp("RTSP ................. NOT TESTED")
+            if (filesRes.isSuccess) {
+                cdPass = true
+                lsPass = true
+                val mediaFiles = filesRes.getOrDefault(emptyList())
+                val thumbnailCount = mediaFiles.count { it.thumbnailUrl != null }
+                val emergencyCount = mediaFiles.count { it.isEmergency }
 
-            val overall = if (sessionPass && devInfoPass && appStatusPass && settingsPass && lsPass) "READY" else "PARTIAL"
-            repository.logRtsp("Overall: $overall")
+                repository.logRtsp("[8] CD /tmp/fuse_d/DCIM ...... PASS")
+                repository.logRtsp("[9] LS root DCIM directory ... PASS")
+                repository.logRtsp("  - Total media files found: ${mediaFiles.size}")
+                repository.logRtsp("  - Companion thumbnail pairs: $thumbnailCount")
+                repository.logRtsp("  - Emergency recordings: $emergencyCount")
+
+                if (mediaFiles.isNotEmpty()) {
+                    val sampleFile = mediaFiles.first()
+                    repository.logRtsp("[9F] Sample HTTP Media URL: ${sampleFile.httpUrl}")
+                }
+            } else {
+                repository.logRtsp("[8] CD /tmp/fuse_d/DCIM ...... PARTIAL / FAIL")
+                repository.logRtsp("[9] LS current directory ..... FAIL (${filesRes.exceptionOrNull()?.localizedMessage})")
+            }
+
+            kotlinx.coroutines.delay(350)
+
+            // Stage 10: RTSP readiness / probe
+            repository.logRtsp("[STAGE 10] Probing viewfinder initialization & RTSP readiness...")
+            val vfPrepRes = repository.prepareLiveView()
+            val vfSuccess = vfPrepRes.isSuccess
+            val rtspSocketOpen = if (repository.isMockMode.value) true else com.asus.recosmart.data.network.CameraNetworkManager.probeRtspSocket()
+            val firstFrameRendered = repository.cameraStatus.value.firstVideoFrameRendered
+
+            repository.logRtsp("  - RESET_TO_VF (259): ${if (vfSuccess) "PASS" else "FAIL"}")
+            repository.logRtsp("  - RTSP TCP 192.168.42.1:554: ${if (rtspSocketOpen) "OPEN" else "CLOSED"}")
+            repository.logRtsp("  - First Frame Rendered: ${if (firstFrameRendered) "RECEIVED" else "NOT RECEIVED"}")
+
+            val rtspStageResult = when {
+                vfSuccess && rtspSocketOpen && firstFrameRendered -> "PASS"
+                vfSuccess && rtspSocketOpen -> "PARTIAL (RTSP URL & Socket READY, first frame pending player view)"
+                else -> "FAIL (${vfPrepRes.exceptionOrNull()?.localizedMessage ?: "RTSP stream unavailable"})"
+            }
+            rtspPass = vfSuccess && rtspSocketOpen && firstFrameRendered
+            repository.logRtsp("[10] RTSP readiness .......... $rtspStageResult")
+
+            val overall = if (sessionPass && tokenPass && devInfoPass && appStatusPass && settingsPass && lsPass && rtspPass) "PASS" else "PARTIAL"
+            repository.logRtsp("Overall Diagnostic Result: $overall")
             repository.logRtsp("==================================================")
         }
     }

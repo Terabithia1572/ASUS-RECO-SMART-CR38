@@ -6,6 +6,14 @@ data class CameraResponse(
     val token: Int = 0,
     val param: String? = null,
     val type: String? = null,
+    val brand: String? = null,
+    val model: String? = null,
+    val apiVer: String? = null,
+    val fwVer: String? = null,
+    val appType: String? = null,
+    val logo: String? = null,
+    val chip: String? = null,
+    val http: String? = null,
     val rawResponse: String = "",
     val timestampMs: Long = System.currentTimeMillis()
 ) {

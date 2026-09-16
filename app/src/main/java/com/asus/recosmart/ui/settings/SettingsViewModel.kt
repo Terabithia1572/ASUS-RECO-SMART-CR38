@@ -8,6 +8,7 @@ import com.asus.recosmart.domain.model.CameraSettingOption
 import com.asus.recosmart.domain.model.CameraSettingSpec
 import com.asus.recosmart.domain.model.SessionState
 import com.asus.recosmart.domain.repository.CameraRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +27,9 @@ class SettingsViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isSettingMutationInProgress = MutableStateFlow(false)
+    val isSettingMutationInProgress: StateFlow<Boolean> = _isSettingMutationInProgress.asStateFlow()
+
     private val _statusText = MutableStateFlow<String?>(null)
     val statusText: StateFlow<String?> = _statusText.asStateFlow()
 
@@ -34,6 +38,7 @@ class SettingsViewModel(
     }
 
     fun loadSettings() {
+        if (_isSettingMutationInProgress.value) return
         viewModelScope.launch {
             _isLoading.value = true
             _statusText.value = "Kamera ayarları alınıyor..."
@@ -51,22 +56,128 @@ class SettingsViewModel(
     }
 
     fun updateSetting(key: String, wireValue: String) {
+        if (_isSettingMutationInProgress.value) {
+            repository.logRtsp("[SETTINGS REJECTED] Mutation already in progress. Request key='$key' ignored.")
+            return
+        }
+
         viewModelScope.launch {
+            _isSettingMutationInProgress.value = true
             val spec = _settingSpecs.value.find { it.key == key }
             val optionName = spec?.options?.find { it.wireValue == wireValue }?.displayName ?: wireValue
-            _statusText.value = "${spec?.label ?: key} -> $optionName güncelleniyor..."
 
-            val res = repository.updateSetting(key, wireValue)
-            if (res.isSuccess) {
-                _statusText.value = "${spec?.label ?: key} -> $optionName olarak güncellendi"
-                loadSettings()
+            if (key == "video_resolution") {
+                executeRecordingAwareResolutionChange(key, wireValue, optionName, spec)
             } else {
-                _statusText.value = "${spec?.label ?: key} güncellenemedi"
+                executeStandardSettingUpdate(key, wireValue, optionName, spec)
             }
+
+            _isSettingMutationInProgress.value = false
+        }
+    }
+
+    private suspend fun executeRecordingAwareResolutionChange(
+        key: String,
+        wireValue: String,
+        optionName: String,
+        spec: CameraSettingSpec?
+    ) {
+        val wasRecordingBefore = repository.cameraStatus.value.isRecording
+        repository.logRtsp("[RESOLUTION] ==================================================")
+        repository.logRtsp("[RESOLUTION] Target resolution: '$optionName' ($wireValue)")
+        repository.logRtsp("[RESOLUTION] Recording state before change: ${if (wasRecordingBefore) "RECORDING" else "NOT_RECORDING"}")
+
+        // Step 1: Safely stop recording if active
+        if (wasRecordingBefore) {
+            _statusText.value = "Video çözünürlüğü değiştirmek için kayıt geçici olarak durduruluyor..."
+            repository.logRtsp("[RESOLUTION] Step 1/5: Sending RECORD_STOP...")
+            val stopStartTime = System.currentTimeMillis()
+            val stopRes = repository.stopRecording()
+            val stopElapsed = System.currentTimeMillis() - stopStartTime
+            repository.logRtsp("[RESOLUTION] RECORD_STOP acknowledged after ${stopElapsed}ms (success=${stopRes.isSuccess})")
+
+            repository.logRtsp("[RESOLUTION] Step 2/5: Waiting for encoder stabilization (500ms)...")
+            delay(500)
+        }
+
+        // Step 2: Apply resolution setting
+        _statusText.value = "Video çözünürlüğü uygulanıyor..."
+        repository.logRtsp("[RESOLUTION] Step 3/5: Sending SET_SETTING video_resolution='$wireValue'...")
+        val setStartTime = System.currentTimeMillis()
+        val setRes = repository.updateSetting(key, wireValue)
+        val setElapsed = System.currentTimeMillis() - setStartTime
+        repository.logRtsp("[RESOLUTION] SET_SETTING acknowledged after ${setElapsed}ms (success=${setRes.isSuccess})")
+
+        // Step 3: Verify resolution setting
+        _statusText.value = "Video çözünürlüğü doğrulanıyor..."
+        repository.logRtsp("[RESOLUTION] Step 4/5: Verifying setting via GET_ALL_CURRENT_SETTINGS...")
+        val verifyRes = repository.fetchAllSettings()
+        var confirmedVal: String? = null
+        if (verifyRes.isSuccess) {
+            val settingsMap = verifyRes.getOrDefault(emptyList()).associateBy { it.key }
+            confirmedVal = settingsMap[key]?.value
+            _settingSpecs.value = buildSettingSpecs(settingsMap)
+        }
+        val isVerified = confirmedVal == wireValue
+        repository.logRtsp("[RESOLUTION] Camera reported: '${confirmedVal ?: "unknown"}' (verified=$isVerified)")
+
+        // Step 4: Restart recording if previously active
+        if (wasRecordingBefore) {
+            _statusText.value = "Kayıt yeniden başlatılıyor..."
+            repository.logRtsp("[RESOLUTION] Step 5/5: Restarting previous recording state (RECORD_START)...")
+            val recStartTime = System.currentTimeMillis()
+            val startRes = repository.startRecording()
+            val recElapsed = System.currentTimeMillis() - recStartTime
+            repository.logRtsp("[RESOLUTION] RECORD_START acknowledged after ${recElapsed}ms (success=${startRes.isSuccess})")
+        }
+
+        // Step 5: Update final UI status
+        if (isVerified) {
+            _statusText.value = "Video çözünürlüğü güncellendi: $optionName"
+            repository.logRtsp("[RESOLUTION] COMPLETE: Video resolution updated to $optionName ($wireValue)")
+        } else {
+            val reason = if (confirmedVal != null) "Kamera eski değeri korudu ($confirmedVal)" else "Doğrulama okuması başarısız"
+            _statusText.value = "Video çözünürlüğü değiştirilemedi: $reason"
+            repository.logRtsp("[RESOLUTION] FAILED: $reason")
+        }
+        repository.logRtsp("[RESOLUTION] ==================================================")
+    }
+
+    private suspend fun executeStandardSettingUpdate(
+        key: String,
+        wireValue: String,
+        optionName: String,
+        spec: CameraSettingSpec?
+    ) {
+        _statusText.value = "${spec?.label ?: key} -> $optionName güncelleniyor..."
+        repository.logRtsp("[SETTINGS WRITE] Key='$key', Param='$wireValue' requested...")
+
+        val res = repository.updateSetting(key, wireValue)
+        if (res.isSuccess) {
+            val verifyRes = repository.fetchAllSettings()
+            if (verifyRes.isSuccess) {
+                val settingsMap = verifyRes.getOrDefault(emptyList()).associateBy { it.key }
+                val confirmedVal = settingsMap[key]?.value
+                if (confirmedVal == wireValue) {
+                    _settingSpecs.value = buildSettingSpecs(settingsMap)
+                    _statusText.value = "${spec?.label ?: key} -> $optionName olarak güncellendi"
+                    repository.logRtsp("[SETTINGS WRITE CONFIRMED] Key='$key' confirmed on camera as '$wireValue'")
+                } else {
+                    _statusText.value = "${spec?.label ?: key} güncellenemedi (Kamera eski değeri korudu: ${confirmedVal ?: "bilinmiyor"})"
+                    repository.logRtsp("[SETTINGS WRITE REJECTED] Camera retained '${confirmedVal}' instead of '$wireValue'")
+                }
+            } else {
+                _statusText.value = "${spec?.label ?: key} güncellendi"
+            }
+        } else {
+            val err = res.exceptionOrNull()?.localizedMessage ?: "Komut reddedildi"
+            _statusText.value = "${spec?.label ?: key} güncellenemedi: $err"
+            repository.logRtsp("[SETTINGS WRITE FAIL] Key='$key', Param='$wireValue' failed: $err")
         }
     }
 
     fun formatSdCard() {
+        if (_isSettingMutationInProgress.value) return
         viewModelScope.launch {
             _statusText.value = "SD Kart biçimlendiriliyor..."
             val res = repository.formatSdCard()
@@ -79,6 +190,7 @@ class SettingsViewModel(
     }
 
     fun factoryReset() {
+        if (_isSettingMutationInProgress.value) return
         viewModelScope.launch {
             _statusText.value = "Fabrika ayarlarına dönülüyor..."
             val res = repository.factoryReset()
@@ -92,6 +204,7 @@ class SettingsViewModel(
     }
 
     fun resetToVf() {
+        if (_isSettingMutationInProgress.value) return
         viewModelScope.launch {
             _statusText.value = "Kamera canlı görüntü moduna sıfırlanıyor..."
             val res = repository.resetToVf()
@@ -124,14 +237,9 @@ class SettingsViewModel(
                     CameraSettingOption("1920×1080 • 30 FPS", "1920x1080 30P 16:9"),
                     CameraSettingOption("1280×720 • 60 FPS", "1280x720 60P 16:9"),
                     CameraSettingOption("1280×720 • 30 FPS", "1280x720 30P 16:9"),
-                    CameraSettingOption("1920×1080 HDR • 30 FPS", "HDR 1920x1080 30P 16:9"),
+                    CameraSettingOption("1920×1080 HDR (Doğrulanmadı / CR38 Desteklemiyor)", "HDR 1920x1080 30P 16:9"),
                     CameraSettingOption("2304×1296 • 30 FPS", "2304x1296 30P 16:9"),
-                    CameraSettingOption("2560×1080 • 30 FPS", "2560x1080 30P 21:9"),
-                    // DECOMPILED SOURCE CONFLICT:
-                    // DeviceCommand.java transmits "432x240 240P 16:9" while another parser references "432x240 120P 16:9".
-                    // Preserving wire value "432x240 240P 16:9".
-                    // UNVERIFIED — REQUIRES PHYSICAL CR38 TEST
-                    CameraSettingOption("432×240 Yüksek Hız (DOĞRULANMADI)", "432x240 240P 16:9")
+                    CameraSettingOption("2560×1080 • 30 FPS", "2560x1080 30P 21:9")
                 ),
                 currentWireValue = defaultVideoRes
             ),

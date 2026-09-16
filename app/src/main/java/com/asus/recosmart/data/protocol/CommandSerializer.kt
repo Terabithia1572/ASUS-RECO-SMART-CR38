@@ -31,7 +31,9 @@ object CommandSerializer {
                 json.put("param", "force")
             }
             is CameraCommand.ListFiles -> {
-                json.put("param", command.path)
+                if (command.path.isNotEmpty()) {
+                    json.put("param", command.path)
+                }
             }
             is CameraCommand.ChangeDir -> {
                 json.put("param", command.path)

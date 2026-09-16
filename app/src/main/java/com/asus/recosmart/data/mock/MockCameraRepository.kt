@@ -50,11 +50,11 @@ class MockCameraRepository : CameraRepository {
     )
 
     private val mockFiles = mutableListOf(
-        CameraFile("LOCA0001.MP4", "100MEDIA", 452001024L, "2026-09-15 14:30:00"),
-        CameraFile("LOCA0002.MP4", "100MEDIA", 450123990L, "2026-09-15 14:33:00"),
-        CameraFile("LOCA0003.JPG", "100MEDIA", 3450112L, "2026-09-15 14:35:12"),
-        CameraFile("EMER0001.MP4", "100MEDIA", 512000000L, "2026-09-15 15:00:00"),
-        CameraFile("LOCA0004.JPG", "100MEDIA", 4120990L, "2026-09-15 16:12:44")
+        CameraFile("FILE3956.mp4", "116MEDIA", 62914560L, "2015-08-23 15:50:40", thumbnailUrl = "http://192.168.42.1/DCIM/116MEDIA/FILE3956_thm.mp4"),
+        CameraFile("EMRG3992.mp4", "116MEDIA", 62914560L, "2015-08-23 15:52:00"),
+        CameraFile("FILE3957.mp4", "116MEDIA", 60123990L, "2015-08-23 16:01:10", thumbnailUrl = "http://192.168.42.1/DCIM/116MEDIA/FILE3957_thm.mp4"),
+        CameraFile("FILE1001.mp4", "110MEDIA", 452001024L, "2021-07-11 15:50:40"),
+        CameraFile("FILE0501.JPG", "105MEDIA", 3450112L, "2019-09-18 15:50:40")
     )
 
     init {
@@ -341,6 +341,10 @@ class MockCameraRepository : CameraRepository {
 
     override fun logRtsp(message: String) {
         log(message)
+    }
+
+    override fun setFirstVideoFrameRendered(rendered: Boolean) {
+        _cameraStatus.value = _cameraStatus.value.copy(firstVideoFrameRendered = rendered)
     }
 
     private fun log(msg: String) {

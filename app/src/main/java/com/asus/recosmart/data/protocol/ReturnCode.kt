@@ -6,7 +6,7 @@ enum class ReturnCode(val code: Int, val description: String) {
     INVALID_TOKEN(-3, "Invalid session token"),
     COMMAND_FAILED(-4, "Command execution failed"),
     CAMERA_BUSY(-5, "Camera is busy"),
-    OUT_OF_MEMORY(-7, "Out of memory / SD card full"),
+    OUT_OF_MEMORY(-7, "Device rejection / Operation not permitted in current state (rval=-7)"),
     NO_SD_CARD(-9, "No SD card inserted"),
     INVALID_PARAM(-13, "Invalid parameter"),
     UNKNOWN(-999, "Unknown error");

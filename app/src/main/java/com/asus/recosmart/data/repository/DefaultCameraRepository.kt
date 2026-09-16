@@ -12,12 +12,15 @@ import com.asus.recosmart.domain.model.SessionState
 import com.asus.recosmart.domain.repository.CameraRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class DefaultCameraRepository : CameraRepository {
+
+    private val scope = CoroutineScope(Dispatchers.Default)
 
     private val tcpClient = TcpSocketClient()
     private val sessionManager = SessionManager()
@@ -26,15 +29,52 @@ class DefaultCameraRepository : CameraRepository {
     private val _isMockMode = MutableStateFlow(true)
     override val isMockMode: StateFlow<Boolean> = _isMockMode.asStateFlow()
 
+    private val _sessionState = MutableStateFlow<SessionState>(SessionState.Disconnected)
+    override val sessionState: StateFlow<SessionState> = _sessionState.asStateFlow()
+
     private val _cameraStatus = MutableStateFlow(CameraStatus())
-    override val cameraStatus: StateFlow<CameraStatus>
-        get() = if (_isMockMode.value) mockRepository.cameraStatus else _cameraStatus.asStateFlow()
+    override val cameraStatus: StateFlow<CameraStatus> = _cameraStatus.asStateFlow()
 
-    override val sessionState: StateFlow<SessionState>
-        get() = if (_isMockMode.value) mockRepository.sessionState else sessionManager.sessionState
+    private val _debugLogs = MutableStateFlow<List<String>>(emptyList())
+    override val debugLogs: StateFlow<List<String>> = _debugLogs.asStateFlow()
 
-    override val debugLogs: StateFlow<List<String>>
-        get() = if (_isMockMode.value) mockRepository.debugLogs else tcpClient.logs
+    init {
+        scope.launch {
+            sessionManager.sessionState.collect { realSession ->
+                if (!_isMockMode.value) {
+                    _sessionState.value = realSession
+                }
+            }
+        }
+        scope.launch {
+            mockRepository.sessionState.collect { mockSession ->
+                if (_isMockMode.value) {
+                    _sessionState.value = mockSession
+                }
+            }
+        }
+        scope.launch {
+            mockRepository.cameraStatus.collect { mockStatus ->
+                if (_isMockMode.value) {
+                    _cameraStatus.value = mockStatus
+                }
+            }
+        }
+        scope.launch {
+            tcpClient.logs.collect { logs ->
+                if (!_isMockMode.value) {
+                    _debugLogs.value = logs
+                }
+            }
+        }
+        scope.launch {
+            mockRepository.debugLogs.collect { logs ->
+                if (_isMockMode.value) {
+                    _debugLogs.value = logs
+                }
+            }
+        }
+    }
 
     override suspend fun connect(ip: String, port: Int): Result<Unit> {
         if (_isMockMode.value) {
@@ -71,6 +111,22 @@ class DefaultCameraRepository : CameraRepository {
                 commandPort = port,
                 activeToken = acquiredToken
             )
+
+            // Automatically query device info to populate brand, model, firmware
+            val devInfoRes = getDeviceInformation()
+            if (devInfoRes.isSuccess) {
+                val devInfo = devInfoRes.getOrNull()
+                if (devInfo != null) {
+                    _cameraStatus.value = _cameraStatus.value.copy(
+                        brand = devInfo.brand ?: "SanJet",
+                        model = devInfo.model ?: "DR38AS",
+                        firmwareVersion = devInfo.fwVer ?: "2501",
+                        apiVersion = devInfo.apiVer ?: "2.8.00"
+                    )
+                    tcpClient.log("[REAL DEVINFO] Brand: ${_cameraStatus.value.brand}, Model: ${_cameraStatus.value.model}, FW: ${_cameraStatus.value.firmwareVersion}")
+                }
+            }
+
             Result.success(Unit)
         } else {
             val err = sessionRes.exceptionOrNull()?.localizedMessage ?: "START_SESSION failed"
@@ -87,7 +143,7 @@ class DefaultCameraRepository : CameraRepository {
         }
         tcpClient.disconnect()
         sessionManager.setDisconnected()
-        _cameraStatus.value = _cameraStatus.value.copy(isConnected = false, activeToken = 0, isRecording = false)
+        _cameraStatus.value = _cameraStatus.value.copy(isConnected = false, activeToken = 0, isRecording = false, firstVideoFrameRendered = false)
     }
 
     override suspend fun startSession(): Result<Int> {
@@ -132,6 +188,11 @@ class DefaultCameraRepository : CameraRepository {
         val result = sendCommandInternal(CameraCommand.RecordStop)
         if (result.getOrNull()?.isSuccess == true) {
             _cameraStatus.value = _cameraStatus.value.copy(isRecording = false)
+            // Asynchronously refresh camera files without blocking
+            scope.launch {
+                delay(1200)
+                listFiles(CameraStatus.DEFAULT_DCIM_PATH)
+            }
         }
         return result
     }
@@ -144,7 +205,9 @@ class DefaultCameraRepository : CameraRepository {
     override suspend fun fetchAllSettings(): Result<List<CameraSetting>> {
         if (_isMockMode.value) return mockRepository.fetchAllSettings()
         val respResult = sendCommandInternal(CameraCommand.GetAllCurrentSettings)
-        return respResult.map { emptyList() }
+        return respResult.map { resp ->
+            com.asus.recosmart.data.protocol.ResponseParser.parseSettings(resp.rawResponse)
+        }
     }
 
     override suspend fun updateSetting(key: String, value: String): Result<CameraResponse> {
@@ -154,13 +217,81 @@ class DefaultCameraRepository : CameraRepository {
 
     override suspend fun listFiles(path: String): Result<List<CameraFile>> {
         if (_isMockMode.value) return mockRepository.listFiles(path)
-        val respResult = sendCommandInternal(CameraCommand.ListFiles(path))
-        return respResult.map { resp -> com.asus.recosmart.data.protocol.ResponseParser.parseListing(resp.rawResponse) }
+
+        val rootPath = "/tmp/fuse_d/DCIM"
+        tcpClient.log("[REAL FS] STEP 1: CD to root '$rootPath' (CD msg_id 1283)...")
+        val cdRootRes = sendCommandInternal(CameraCommand.ChangeDir(rootPath))
+        if (cdRootRes.isFailure || cdRootRes.getOrNull()?.isSuccess != true) {
+            val err = cdRootRes.exceptionOrNull()?.localizedMessage ?: "CD to root DCIM failed"
+            tcpClient.log("[REAL ERROR] $err")
+            return Result.failure(Exception(err))
+        }
+
+        tcpClient.log("[REAL FS] STEP 2: LS root directory...")
+        val lsRootRes = sendCommandInternal(CameraCommand.ListFiles(""))
+        if (lsRootRes.isFailure || lsRootRes.getOrNull()?.isSuccess != true) {
+            val err = lsRootRes.exceptionOrNull()?.localizedMessage ?: "LS root DCIM failed"
+            tcpClient.log("[REAL ERROR] $err")
+            return Result.failure(Exception(err))
+        }
+
+        val rawRootResponse = lsRootRes.getOrThrow().rawResponse
+        val rootDirs = com.asus.recosmart.data.protocol.ResponseParser.parseDirectories(rawRootResponse)
+
+        if (rootDirs.isEmpty()) {
+            tcpClient.log("[REAL FS] No subdirectories in DCIM root. Parsing files directly from root...")
+            val rootFiles = com.asus.recosmart.data.protocol.ResponseParser.parseFilesListing(rawRootResponse, "DCIM")
+            return Result.success(rootFiles)
+        }
+
+        tcpClient.log("[REAL FS] Discovered ${rootDirs.size} MEDIA directories: ${rootDirs.joinToString { it.name }}")
+
+        val allMediaFiles = mutableListOf<CameraFile>()
+
+        for (dir in rootDirs) {
+            val dirPath = dir.remotePath
+            tcpClient.log("[REAL FS] Enumerating MEDIA folder '${dir.name}' ($dirPath)...")
+            val cdDirRes = sendCommandInternal(CameraCommand.ChangeDir(dirPath))
+            if (cdDirRes.isFailure || cdDirRes.getOrNull()?.isSuccess != true) {
+                tcpClient.log("[REAL WARNING] Failed to CD to '${dir.name}', skipping.")
+                continue
+            }
+
+            val lsDirRes = sendCommandInternal(CameraCommand.ListFiles(""))
+            if (lsDirRes.isFailure || lsDirRes.getOrNull()?.isSuccess != true) {
+                tcpClient.log("[REAL WARNING] Failed to LS '${dir.name}', skipping.")
+                continue
+            }
+
+            val rawDirResponse = lsDirRes.getOrThrow().rawResponse
+            val folderFiles = com.asus.recosmart.data.protocol.ResponseParser.parseFilesListing(rawDirResponse, dir.name)
+            tcpClient.log("[REAL FS] Folder '${dir.name}': parsed ${folderFiles.size} media files (paired with thumbnails).")
+            allMediaFiles.addAll(folderFiles)
+        }
+
+        // Restore CD state back to root DCIM
+        sendCommandInternal(CameraCommand.ChangeDir(rootPath))
+
+        tcpClient.log("[REAL FS] TOTAL ENUMERATED MEDIA: ${allMediaFiles.size} files across ${rootDirs.size} folders.")
+        return Result.success(allMediaFiles)
     }
 
     override suspend fun deleteFile(filePath: String): Result<CameraResponse> {
         if (_isMockMode.value) return mockRepository.deleteFile(filePath)
-        return sendCommandInternal(CameraCommand.DeleteFile(filePath))
+        tcpClient.log("[REAL FS] Deleting file '$filePath'...")
+        val mainRes = sendCommandInternal(CameraCommand.DeleteFile(filePath))
+        
+        if (mainRes.getOrNull()?.isSuccess == true) {
+            if (!filePath.contains("_thm")) {
+                val extIndex = filePath.lastIndexOf('.')
+                if (extIndex > 0) {
+                    val thmPath = filePath.substring(0, extIndex) + "_thm" + filePath.substring(extIndex)
+                    tcpClient.log("[REAL FS] Deleting companion thumbnail file '$thmPath'...")
+                    sendCommandInternal(CameraCommand.DeleteFile(thmPath))
+                }
+            }
+        }
+        return mainRes
     }
 
     override suspend fun formatSdCard(): Result<CameraResponse> {
@@ -180,7 +311,65 @@ class DefaultCameraRepository : CameraRepository {
 
     override suspend fun prepareLiveView(): Result<CameraResponse> {
         if (_isMockMode.value) return mockRepository.prepareLiveView()
-        return sendCommandInternal(CameraCommand.ResetToVf)
+
+        tcpClient.log("==================================================")
+        tcpClient.log("[LIVE INIT] Starting legacy viewfinder initialization sequence...")
+
+        // Stage 1: Load current settings
+        tcpClient.log("[LIVE INIT 1/6] GET_ALL_CURRENT_SETTINGS (msg_id 3)...")
+        val settingsRes = sendCommandInternal(CameraCommand.GetAllCurrentSettings)
+        if (settingsRes.isFailure) {
+            tcpClient.log("[LIVE INIT 1/6 NOTICE] GET_ALL_CURRENT_SETTINGS notice: ${settingsRes.exceptionOrNull()?.localizedMessage}")
+        } else {
+            tcpClient.log("[LIVE INIT 1/6 PASS] GET_ALL_CURRENT_SETTINGS OK")
+        }
+
+        // Stage 2: Stop existing VF stream if any (STOP_VF msg_id 260)
+        tcpClient.log("[LIVE INIT 2/6] STOP_VF (msg_id 260)...")
+        val stopVfRes = sendCommandInternal(CameraCommand.StopVf)
+        if (stopVfRes.isFailure) {
+            tcpClient.log("[LIVE INIT 2/6 NOTICE] STOP_VF notice: ${stopVfRes.exceptionOrNull()?.localizedMessage}")
+        } else {
+            tcpClient.log("[LIVE INIT 2/6 PASS] STOP_VF OK")
+        }
+
+        // Stage 3: Set stream_out_type to rtsp
+        tcpClient.log("[LIVE INIT 3/6] SET stream_out_type=rtsp (msg_id 2)...")
+        val setStreamRes = sendCommandInternal(CameraCommand.SetSetting("stream_out_type", "rtsp"))
+        if (setStreamRes.isFailure) {
+            tcpClient.log("[LIVE INIT 3/6 NOTICE] SET stream_out_type notice: ${setStreamRes.exceptionOrNull()?.localizedMessage}")
+        } else {
+            tcpClient.log("[LIVE INIT 3/6 PASS] SET stream_out_type=rtsp OK")
+        }
+
+        // Stage 4: Set save_low_resolution_clip to on
+        tcpClient.log("[LIVE INIT 4/6] SET save_low_resolution_clip=on (msg_id 2)...")
+        val setLowResRes = sendCommandInternal(CameraCommand.SetSetting("save_low_resolution_clip", "on"))
+        if (setLowResRes.isFailure) {
+            tcpClient.log("[LIVE INIT 4/6 NOTICE] SET save_low_resolution_clip notice: ${setLowResRes.exceptionOrNull()?.localizedMessage}")
+        } else {
+            tcpClient.log("[LIVE INIT 4/6 PASS] SET save_low_resolution_clip=on OK")
+        }
+
+        delay(1000)
+
+        // Stage 5: Reset VF (RESET_TO_VF msg_id 259 param force)
+        tcpClient.log("[LIVE INIT 5/6] RESET_TO_VF force (msg_id 259)...")
+        val resetVfRes = sendCommandInternal(CameraCommand.ResetToVf)
+        if (resetVfRes.isFailure || resetVfRes.getOrNull()?.isSuccess != true) {
+            val err = resetVfRes.exceptionOrNull()?.localizedMessage ?: "RESET_TO_VF rejected (rval=${resetVfRes.getOrNull()?.rval})"
+            tcpClient.log("[LIVE INIT 5/6 FAIL] RESET_TO_VF failed: $err")
+            return Result.failure(Exception(err))
+        }
+        tcpClient.log("[LIVE INIT 5/6 PASS] RESET_TO_VF OK")
+
+        delay(500)
+
+        // Stage 6: RTSP Probe Ready
+        tcpClient.log("[LIVE INIT 6/6 PASS] RTSP URL ready: ${CameraStatus.DEFAULT_RTSP_URL}")
+        tcpClient.log("==================================================")
+
+        return resetVfRes
     }
 
     override suspend fun stopLiveView(): Result<CameraResponse> {
@@ -213,10 +402,15 @@ class DefaultCameraRepository : CameraRepository {
         _isMockMode.value = enabled
         mockRepository.toggleMockMode(enabled)
         sessionManager.setDisconnected()
-        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             tcpClient.disconnect()
         }
-        _cameraStatus.value = _cameraStatus.value.copy(isConnected = false, activeToken = 0, isRecording = false)
+        val targetStatus = if (enabled) mockRepository.cameraStatus.value else CameraStatus(isConnected = false, activeToken = 0, isRecording = false)
+        val targetSession = if (enabled) mockRepository.sessionState.value else SessionState.Disconnected
+        val targetLogs = if (enabled) mockRepository.debugLogs.value else tcpClient.logs.value
+        _cameraStatus.value = targetStatus
+        _sessionState.value = targetSession
+        _debugLogs.value = targetLogs
     }
 
     override fun clearDebugLogs() {
@@ -233,6 +427,13 @@ class DefaultCameraRepository : CameraRepository {
         } else {
             tcpClient.log(message)
         }
+    }
+
+    override fun setFirstVideoFrameRendered(rendered: Boolean) {
+        if (_isMockMode.value) {
+            mockRepository.setFirstVideoFrameRendered(rendered)
+        }
+        _cameraStatus.value = _cameraStatus.value.copy(firstVideoFrameRendered = rendered)
     }
 
     private suspend fun sendCommandInternal(command: CameraCommand): Result<CameraResponse> {

@@ -36,7 +36,9 @@ fun SettingsScreen(
     val sessionState by viewModel.sessionState.collectAsState()
     val isMockMode by viewModel.isMockMode.collectAsState()
 
-    val canEdit = isMockMode || sessionState is SessionState.Connected
+    val isSettingMutationInProgress by viewModel.isSettingMutationInProgress.collectAsState()
+
+    val canEdit = (isMockMode || sessionState is SessionState.Connected) && !isSettingMutationInProgress
 
     var selectedSpecForEdit by remember { mutableStateOf<CameraSettingSpec?>(null) }
     var showFormatConfirmDialog by remember { mutableStateOf(false) }
@@ -67,18 +69,18 @@ fun SettingsScreen(
                 )
             }
             Row {
-                IconButton(onClick = { viewModel.loadSettings() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Yenile", tint = PrimaryCyan)
+                IconButton(onClick = { viewModel.loadSettings() }, enabled = canEdit) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Yenile", tint = if (canEdit) PrimaryCyan else Color.Gray)
                 }
-                IconButton(onClick = { viewModel.resetToVf() }) {
-                    Icon(Icons.Default.RestartAlt, contentDescription = "Kamerayı Sıfırla", tint = RecordRed)
+                IconButton(onClick = { viewModel.resetToVf() }, enabled = canEdit) {
+                    Icon(Icons.Default.RestartAlt, contentDescription = "Kamerayı Sıfırla", tint = if (canEdit) RecordRed else Color.Gray)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (!canEdit) {
+        if (!canEdit && !isSettingMutationInProgress) {
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(8.dp),
@@ -100,7 +102,32 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        if (!statusText.isNullOrEmpty()) {
+        if (isSettingMutationInProgress) {
+            Surface(
+                color = PrimaryCyan.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        color = PrimaryCyan,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = statusText ?: "Ayar uygulanıyor...",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryCyan
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        } else if (!statusText.isNullOrEmpty()) {
             Text(
                 text = statusText!!,
                 fontSize = 13.sp,

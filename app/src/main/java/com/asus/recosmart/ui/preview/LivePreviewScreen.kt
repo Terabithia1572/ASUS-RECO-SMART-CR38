@@ -63,71 +63,97 @@ fun LivePreviewScreen(
     // RTSP ExoPlayer Lifecycle handling with verified RESET_TO_VF -> RTSP -> STOP_VF sequence
     DisposableEffect(isRealConnected) {
         var localPlayer: ExoPlayer? = null
+        var isFallbackAttempted = false
 
         if (isRealConnected) {
+            com.asus.recosmart.data.network.CameraNetworkManager.bindProcessToWifi(context)
             rtspStreamState = "Preparing Viewfinder (RESET_TO_VF)..."
             isPlayerError = false
 
-            viewModel.prepareLiveView { success, errorMsg ->
-                if (!success) {
-                    isPlayerError = true
-                    rtspStreamState = errorMsg ?: "RESET_TO_VF failed"
-                    return@prepareLiveView
-                }
+            val requestTimestamp = System.currentTimeMillis()
+            viewModel.logRtsp("[TIMING] LIVE_VIEW_REQUESTED at $requestTimestamp")
 
-                viewModel.logRtsp("[RTSP] Preparing ${CameraStatus.DEFAULT_RTSP_URL}")
-                rtspStreamState = "Connecting to RTSP..."
-
+            fun createAndStartPlayer(forceTcp: Boolean) {
+                val playerInitTime = System.currentTimeMillis()
+                viewModel.logRtsp("[RTSP PLAYER] Initializing player (URL: ${CameraStatus.DEFAULT_RTSP_URL}, ForceRtpTcp: $forceTcp)...")
                 val mediaItem = MediaItem.fromUri(CameraStatus.DEFAULT_RTSP_URL)
                 val rtspMediaSource = RtspMediaSource.Factory()
-                    .setForceUseRtpTcp(true)
+                    .setForceUseRtpTcp(forceTcp)
                     .createMediaSource(mediaItem)
 
-                val player = ExoPlayer.Builder(context).build().apply {
+                val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        250, // minBufferMs
+                        500, // maxBufferMs
+                        100, // bufferForPlaybackMs
+                        250  // bufferForPlaybackAfterRebufferMs
+                    )
+                    .build()
+
+                val player = ExoPlayer.Builder(context)
+                    .setLoadControl(loadControl)
+                    .build().apply {
                     setMediaSource(rtspMediaSource)
                     addListener(object : Player.Listener {
                         override fun onPlaybackStateChanged(playbackState: Int) {
                             when (playbackState) {
                                 Player.STATE_BUFFERING -> {
                                     rtspStreamState = "Buffering..."
-                                    viewModel.logRtsp("[RTSP] Buffering")
+                                    viewModel.logRtsp("[RTSP PLAYER] State: BUFFERING")
                                 }
                                 Player.STATE_READY -> {
+                                    val readyTime = System.currentTimeMillis()
+                                    viewModel.logRtsp("[TIMING] PLAYER_READY (+${readyTime - playerInitTime}ms, total +${readyTime - requestTimestamp}ms)")
                                     if (isPlaying) {
                                         rtspStreamState = "Live"
-                                        viewModel.logRtsp("[RTSP] Playing")
                                     } else {
-                                        rtspStreamState = "Paused"
-                                        viewModel.logRtsp("[RTSP] Paused")
+                                        rtspStreamState = "Ready (paused)"
                                     }
                                 }
                                 Player.STATE_ENDED -> {
                                     rtspStreamState = "Stream ended"
-                                    viewModel.logRtsp("[RTSP] Ended")
+                                    viewModel.logRtsp("[RTSP PLAYER] State: ENDED")
                                 }
                                 Player.STATE_IDLE -> {
                                     rtspStreamState = "Idle"
+                                    viewModel.logRtsp("[RTSP PLAYER] State: IDLE")
                                 }
                             }
                         }
 
                         override fun onIsPlayingChanged(isPlaying: Boolean) {
-                            if (isPlaying) {
-                                rtspStreamState = "Live"
-                                viewModel.logRtsp("[RTSP] Playing")
-                            } else if (playbackState == Player.STATE_READY) {
-                                rtspStreamState = "Paused"
-                                viewModel.logRtsp("[RTSP] Paused")
-                            }
+                            viewModel.logRtsp("[RTSP PLAYER] Playing: $isPlaying")
+                        }
+
+                        override fun onRenderedFirstFrame() {
+                            val frameTime = System.currentTimeMillis()
+                            rtspStreamState = "Live"
+                            viewModel.logRtsp("[TIMING] FIRST_FRAME_RENDERED (+${frameTime - playerInitTime}ms, total startup +${frameTime - requestTimestamp}ms)")
+                            viewModel.setFirstVideoFrameRendered(true)
+                        }
+
+                        override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                            viewModel.logRtsp("[RTSP PLAYER] Video size: ${videoSize.width}x${videoSize.height}")
                         }
 
                         override fun onPlayerError(error: PlaybackException) {
-                            isPlayerError = true
-                            rtspStreamState = "RTSP stream unavailable"
                             val errDetail = error.localizedMessage ?: error.errorCodeName
-                            viewModel.logRtsp("[RTSP ERROR] $errDetail")
+                            val causeMsg = error.cause?.localizedMessage ?: "Unknown cause"
+                            viewModel.logRtsp("[RTSP PLAYER ERROR] Code: ${error.errorCodeName} ($errDetail), Cause: $causeMsg")
+
+                            if (!isFallbackAttempted) {
+                                isFallbackAttempted = true
+                                viewModel.logRtsp("[RTSP PLAYER] Attempting transport fallback (ForceRtpTcp=${!forceTcp})...")
+                                localPlayer?.release()
+                                createAndStartPlayer(!forceTcp)
+                            } else {
+                                isPlayerError = true
+                                rtspStreamState = "RTSP error: $errDetail"
+                            }
                         }
                     })
+                    val prepareTime = System.currentTimeMillis()
+                    viewModel.logRtsp("[TIMING] PLAYER_PREPARE at $prepareTime")
                     prepare()
                     playWhenReady = true
                 }
@@ -135,8 +161,22 @@ fun LivePreviewScreen(
                 exoPlayer = player
             }
 
+            viewModel.prepareLiveView { success, errorMsg ->
+                val vfTime = System.currentTimeMillis()
+                viewModel.logRtsp("[TIMING] RESET_TO_VF_COMPLETED (+${vfTime - requestTimestamp}ms, success=$success)")
+                if (!success) {
+                    isPlayerError = true
+                    rtspStreamState = errorMsg ?: "RESET_TO_VF failed"
+                    return@prepareLiveView
+                }
+
+                rtspStreamState = "Connecting to RTSP..."
+                createAndStartPlayer(forceTcp = false)
+            }
+
             onDispose {
-                viewModel.logRtsp("[RTSP] Stopping Live View & releasing player")
+                viewModel.logRtsp("[RTSP PLAYER] Releasing player and stopping live view")
+                viewModel.setFirstVideoFrameRendered(false)
                 localPlayer?.stop()
                 localPlayer?.release()
                 exoPlayer = null

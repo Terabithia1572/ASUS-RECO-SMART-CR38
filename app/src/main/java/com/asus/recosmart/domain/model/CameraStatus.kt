@@ -13,7 +13,12 @@ data class CameraStatus(
     val commandPort: Int = DEFAULT_COMMAND_PORT,
     val dataPort: Int = DEFAULT_DATA_PORT,
     val rtspUrl: String = DEFAULT_RTSP_URL,
-    val currentMode: CameraMode = CameraMode.VIDEO
+    val currentMode: CameraMode = CameraMode.VIDEO,
+    val brand: String = "ASUS",
+    val model: String = "RECO Smart CR38",
+    val firmwareVersion: String = "",
+    val apiVersion: String = "",
+    val firstVideoFrameRendered: Boolean = false
 ) {
     companion object {
         const val DEFAULT_CAMERA_IP = "192.168.42.1"

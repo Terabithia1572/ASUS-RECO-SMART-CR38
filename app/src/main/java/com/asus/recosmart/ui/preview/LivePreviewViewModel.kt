@@ -34,8 +34,19 @@ class LivePreviewViewModel(
         }
     }
 
+    private var prepareLiveViewJob: kotlinx.coroutines.Job? = null
+
     fun prepareLiveView(onResult: (Boolean, String?) -> Unit) {
-        viewModelScope.launch {
+        if (prepareLiveViewJob?.isActive == true) {
+            repository.logRtsp("[VF INIT] Viewfinder initialization already in progress. Awaiting active job...")
+            viewModelScope.launch {
+                prepareLiveViewJob?.join()
+                onResult(true, null)
+            }
+            return
+        }
+
+        prepareLiveViewJob = viewModelScope.launch {
             if (isMockMode.value) {
                 onResult(true, null)
                 return@launch

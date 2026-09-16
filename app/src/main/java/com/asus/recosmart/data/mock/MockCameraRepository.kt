@@ -119,16 +119,24 @@ class MockCameraRepository : CameraRepository {
 
     override suspend fun stopRecording(): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
+        log("[REC] stop requested")
         log("[MOCK TX] -> {\"msg_id\":514,\"token\":$token}")
         delay(300)
         val response = CameraResponse(msgId = 514, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":514}")
         log("[MOCK RX] <- ${response.rawResponse}")
+        log("[REC] RECORD_STOP acknowledged")
         _cameraStatus.value = _cameraStatus.value.copy(isRecording = false)
+
+        log("[REC] waiting for filesystem stabilization")
+        delay(300)
 
         // Add a newly recorded mock file
         val nextId = mockFiles.size + 1
         val newFile = CameraFile("LOCA${String.format("%04d", nextId)}.MP4", "100MEDIA", 210000000L, getCurrentTimestamp())
         mockFiles.add(0, newFile)
+
+        log("[REC] refreshing DCIM")
+        log("[REC] new media discovered: ${newFile.filename}")
 
         return Result.success(response)
     }

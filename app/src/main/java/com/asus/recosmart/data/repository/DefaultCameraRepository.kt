@@ -242,14 +242,24 @@ class DefaultCameraRepository : CameraRepository {
 
     override suspend fun stopRecording(): Result<CameraResponse> {
         if (_isMockMode.value) return mockRepository.stopRecording()
+        tcpClient.log("[REC] stop requested")
         val result = sendCommandInternal(CameraCommand.RecordStop)
         if (result.getOrNull()?.isSuccess == true) {
+            tcpClient.log("[REC] RECORD_STOP acknowledged")
             _cameraStatus.value = _cameraStatus.value.copy(isRecording = false)
-            // Asynchronously refresh camera files without blocking
-            scope.launch {
-                delay(1200)
-                listFiles(CameraStatus.DEFAULT_DCIM_PATH)
+            tcpClient.log("[REC] waiting for filesystem stabilization")
+            delay(800)
+            tcpClient.log("[REC] refreshing DCIM")
+            val listRes = listFiles(CameraStatus.DEFAULT_DCIM_PATH)
+            if (listRes.isSuccess) {
+                val mediaFiles = listRes.getOrDefault(emptyList())
+                val newest = mediaFiles.maxByOrNull { it.dateTime }
+                if (newest != null) {
+                    tcpClient.log("[REC] new media discovered: ${newest.filename}")
+                }
             }
+        } else {
+            tcpClient.log("[REC] RECORD_STOP failed: ${result.exceptionOrNull()?.localizedMessage}")
         }
         return result
     }

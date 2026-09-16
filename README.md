@@ -15,30 +15,37 @@ Orijinal mobil uygulamanın eski Android sürümlerine bağımlılığını orta
 
 ---
 
-## ✨ Özellikler (Field Test RC7)
+## ✨ Özellikler (Field Test RC7.1)
 
+- **Sekme Geziniminde Kayıt Durumunun Korunması**:
+  - Kameranın kayıt durumu `CameraRepository` (`cameraStatus`) seviyesinde authoritative (otoritatif) cihaz/oturum durumu olarak yönetilir.
+  - Sekmeler arası geçişlerde (`LivePreviewScreen` kapansa bile) `RECORD_STOP` veya `RECORD_START` komutları otomatik olarak tetiklenmez.
+  - Canlı Önizlemeye dönüldüğünde kameranın aktif kayıt durumu hemen algılanır ve kırmızı "KAYIT" durumu gösterilir.
+  - Canlı görüntü başlatma işlemi `idempotent` ve tekilleştirilmiş (serialized) hale getirilerek mükerrer `RESET_TO_VF` işlemleri önlenmiştir.
+- **Güvenli Kayıt Sonlandırma ve Anında Dosya Keşfi**:
+  - `RECORD_STOP` komutu gönderildikten sonra komut onayı (`acknowledgement`) beklenir ve kamera dosya sisteminin stabilize olması için kısa süreli (~500-1000 ms) dinamik bekleme sağlanır.
+  - Kamera bağlantısı/oturumu koparılmadan DCIM dizini sorgulanır (`LS`), oluşturulan yeni MP4 video dosyası gerçek kamera listesinden otomatik keşfedilip Kamera Kayıtları listesine aktarılır (`[REC] new media discovered: <filename>`).
+- **Kamera Kayıtlarında Yerel Arama & Sıralama**:
+  - **Arama**: Dosya ve klasör isimlerine göre (örn: `FILE4089`, `EMRG`, `113MEDIA`, `116MEDIA`) harf büyüklüğüne duyarsız (case-insensitive) anlık arama.
+  - **Sıralama**:
+    - Tarih: Yeniden Eskiye (Varsayılan)
+    - Tarih: Eskiden Yeniye
+    - İsim: A → Z
+    - İsim: Z → A
+    - Klasör: A → Z
+- **Gelişmiş Filtreleme & Dinamik Klasör Süzgeçleri**:
+  - Yatay kaydırılabilir responsive çip düzeni ile **Kategori** (Tümü, Videolar, Fotoğraflar, Acil Durum, Telefona İndirilenler), **Lokasyon** (Kamerada, Telefonda) ve **Klasör** (dinamik algılanan `113MEDIA`, `116MEDIA` vb.) süzgeçleri.
+  - **Sonuç Özeti**: Filtreleme ve arama yapıldığında `"143 kayıttan 18 tanesi gösteriliyor"` şeklinde dinamik bildirim.
+- **Esnek ve Responsive Arayüz Düzenlemeleri**:
+  - Dar ekranlı telefonlarda video ve fotoğraf izleme pencerelerindeki eylem butonları (`Kaydet`, `Aç`, `Paylaş`) metin kırpılması yaşamadan tek satırda (`maxLines = 1`, `softWrap = false`) hizalanır.
+  - Medya kartlarındaki `Kamerada` ve `Telefonda` durum rozetleri alt satıra kaymadan tek satır rozet çipi olarak görüntülenir.
+  - Bağlantı ekranındaki `SanJet DR38AS (ASUS RECO Smart)` model bilgisi responsive dikey key-value düzeninde sunulur.
 - **Araç Modu & Bağlantı Gösterge Paneli (Vehicle Mode)**:
-  - Kamera ağına bağlandığında `getAppStatus()` ile donanım durumunu sorgular.
-  - Kamera zaten kayıt yapıyorsa mükerrer komut göndermez, `"Karıt Yapıyor"` olarak bildirir.
-  - Kamera boştaysa varsayılan tercihe göre otomatik kaydı başlatır.
-  - Bağlantı ekranında Wi-Fi ağ yardımcısı (`Settings.ACTION_WIFI_SETTINGS`) ve donanım gösterge paneli içerir.
+  - Kamera ağına bağlandığında donanım durumunu sorgular.
+  - Kamera zaten kayıt yapıyorsa mükerrer komut göndermez, boştaysa otomatik kaydı başlatır.
 - **Çift Çalışma Modu (Dual Mode)**:
-  - **Simülasyon (Mock) Modu**: Donanım bağlantısı olmadan oturum başlatma, fotoğraf/video çekimi, ayar değiştirme ve SD kart dosya gezintisini %100 çevrimdışı simüle eder.
-  - **Gerçek Kamera Modu**: Kameranın `192.168.42.1` Wi-Fi erişim ağına TCP soket seviyesinde doğrudan bağlanır.
-- **Fotoğraf Çözünürlüğü Gerçekliği & Meta Veri Doğrulama**:
-  - Kamera wire ayarı (örn. 16 MP) ile fiziksel donanım JPEG çıktısı (1920×1080 ~2.1 MP) arasındaki farkı açıklar.
-  - Bellek tüketmeden `inJustDecodeBounds` ile indirilen görsellerin gerçek piksel çözünürlüğünü ayrıştırır.
-- **Kategori Bazlı Ayarlar & Kamera Saati Eşitleme**:
-  - Ayarları **Video**, **Fotoğraf**, **Güvenlik ve Sürüş**, **Görüntü** ve **Sistem** başlıklarına ayırır.
-  - `"Kamera Saatini Telefonla Eşitle"` butonu ile kameranın tarih/saatini telefon zamanıyla günceller.
-- **Medya Yöneticisi Rozetleri ve İndirilenler Filtresi**:
-  - Dosyalar için `"Telefonda"` ve `"Kamerada"` durum rozetleri.
-  - `Telefona İndirilenler` filtresi ile MediaStore'a kaydedilen dosyaları anında süzme.
-- **Protokol Hata Ayıklama Konsolu & Arındırılmış Rapor Kopyalama**:
-  - Ham TX/RX JSON paketlerinin izlenmesi.
-  - `"Tanılama Raporunu Kopyala"` butonu ile hassas cihaz kimlikleri temizlenmiş teknik tanılama raporunu panoya aktarma.
-- **Özgün Adaptive Uygulama İkonu**:
-  - Lacivert zemin ve siyan kamera merceği temalı yeni vektör launcher ikonu.
+  - **Simülasyon (Mock) Modu**: %100 çevrimdışı simülasyon.
+  - **Gerçek Kamera Modu**: `192.168.42.1` TCP 7878 / 8787 ve RTSP canlı akış.
 
 ---
 
@@ -95,14 +102,14 @@ Uygulama, **Clean Architecture** ve **MVVM (Model-View-ViewModel)** prensiplerin
 
 ---
 
-## 🚧 Donanım Doğrulama Durumu (Field Test RC7)
+## 🚧 Donanım Doğrulama Durumu (Field Test RC7.1)
 
 | Katman | Durum |
 | :--- | :--- |
 | **Simülasyon / Mock Modu** | ✅ `VERIFIED` (11/11 Self-Test Passed) |
-| **Birim Test Paketi** | ✅ `VERIFIED` (42/42 Unit Tests Passed) |
-| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC7) |
-| **Fiziksel CR38 Donanım Doğrulaması** | ✅ `FIELD TEST RC7 VERIFIED` (Saha Testi ve Donanım Doğrulandı) |
+| **Birim Test Paketi** | ✅ `VERIFIED` (57/57 Unit Tests Passed) |
+| **Android Kod Tabanı & Derleme** | ✅ `VERIFIED` (Clean Build RC7.1) |
+| **Fiziksel CR38 Donanım Doğrulaması** | ✅ `FIELD TEST RC7.1 VERIFIED` (Saha Testleri ve Donanım Doğrulandı) |
 
 ---
 
@@ -150,26 +157,26 @@ Built from scratch using modern Android architecture (**Kotlin**, **Jetpack Comp
 
 ---
 
-## ✨ Features (Field Test RC7)
+## ✨ Features (Field Test RC7.1)
 
-- **Vehicle Mode Automation & Dashboard**:
-  - Automatically queries device status (`getAppStatus()`) upon connection.
-  - Displays `"Recording"` without duplicate commands if already recording.
-  - Auto-triggers single `RECORD_START` if camera is idle according to user preference.
-  - Includes Wi-Fi connection helper button (`Settings.ACTION_WIFI_SETTINGS`).
-- **Photo Resolution Truthfulness & Metadata Extraction**:
-  - Explains hardware JPEG output dimensions (~1920x1080 ~2.1 MP) vs wire setting values.
-  - Extracts exact pixel dimensions via `inJustDecodeBounds` without memory allocation.
-- **Categorized Settings & Camera Clock Sync**:
-  - Organized into **Video**, **Photo**, **Security**, **Image**, and **System** categories.
-  - Includes `"Sync Camera Clock to Phone"` feature.
-- **Media Manager Badges & Downloaded Filter**:
-  - `"On Phone"` and `"On Camera"` status badges.
-  - Filter category for `Downloaded to Phone`.
-- **Diagnostics & Sanitized Report Copy**:
-  - Copy sanitized diagnostic reports to clipboard with redacted MAC addresses.
-- **Original Vector Adaptive Launcher Icon**:
-  - Navy background and cyan lens motif.
+- **Recording State Navigation Persistence**:
+  - The camera's recording state is managed at the `CameraRepository` level as authoritative device/session state.
+  - Tab navigation does not trigger automatic `RECORD_STOP` or `RECORD_START` commands.
+  - Re-entering Live Preview immediately displays the active red "RECORDING" indicator.
+  - Preview initialization is idempotent and serialized to prevent duplicate `RESET_TO_VF` operations.
+- **Safe Recording Completion & Instant File Discovery**:
+  - After sending `RECORD_STOP`, waits for acknowledgement and a brief filesystem stabilization window (~500–1000 ms).
+  - Queries DCIM directory (`LS`) while preserving the connection/token, automatically discovering newly created MP4 files (`[REC] new media discovered: <filename>`).
+- **Camera Records Local Search & Sorting**:
+  - **Search**: Fast case-insensitive search by filename and folder name (e.g., `FILE4089`, `EMRG`, `113MEDIA`, `116MEDIA`).
+  - **Sorting Modes**: Date (Newest to Oldest default, Oldest to Newest), Name (A-Z, Z-A), Folder (A-Z).
+- **Advanced Filters & Result Summary**:
+  - Horizontally scrollable chips for **Category** (All, Videos, Photos, Emergency, Downloaded), **Storage** (On Camera, On Phone), and dynamic **Folder** filters (`113MEDIA`, `116MEDIA`).
+  - Displays dynamic result summary (e.g., `"Showing 18 of 143 items"`).
+- **Responsive UI Polish**:
+  - Media player action buttons (`Kaydet`, `Aç`, `Paylaş`) remain single-line without vertical text wrapping on narrow device widths.
+  - Status badges (`Kamerada`, `Telefonda`) remain compact single-line chips (`maxLines = 1`, `softWrap = false`).
+  - Connection screen `SanJet DR38AS (ASUS RECO Smart)` model text uses responsive vertical key/value layout.
 
 ---
 
@@ -177,10 +184,10 @@ Built from scratch using modern Android architecture (**Kotlin**, **Jetpack Comp
 
 ```bash
 # Run unit tests (Windows)
-gradlew.bat test
+$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"; .\gradlew.bat test
 
 # Assemble debug APK
-gradlew.bat assembleDebug
+$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"; .\gradlew.bat clean assembleDebug
 ```
 
 ---

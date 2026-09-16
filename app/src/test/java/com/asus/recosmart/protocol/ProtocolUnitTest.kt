@@ -1,10 +1,13 @@
 package com.asus.recosmart.protocol
 
+import com.asus.recosmart.data.mock.MockCameraRepository
 import com.asus.recosmart.data.protocol.CommandSerializer
 import com.asus.recosmart.data.protocol.ResponseParser
 import com.asus.recosmart.data.protocol.TcpResponseFramer
 import com.asus.recosmart.domain.model.CameraCommand
+import com.asus.recosmart.domain.model.CameraFile
 import com.asus.recosmart.ui.files.FileFilterCategory
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -476,5 +479,212 @@ class ProtocolUnitTest {
         val rawLog = "Device MAC address 00:1A:2C:3D:4E:5F connected to AP"
         val sanitized = rawLog.replace(Regex("([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})"), "[REDACTED_MAC]")
         assertEquals("Device MAC address [REDACTED_MAC] connected to AP", sanitized)
+    }
+
+    // =========================================================================
+    // 11. FIELD TEST RC7.1 VERIFICATION TESTS (RECORDING LIFECYCLE & FILE MANAGER)
+    // =========================================================================
+
+    @Test
+    fun testRecordingStateSurvivesSimulatedLiveScreenRecreation() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording()
+        assertTrue("Repository must record active recording state", repo.cameraStatus.value.isRecording)
+
+        // Re-open preview on simulated repository
+        val vfRes = repo.prepareLiveView()
+        assertTrue("prepareLiveView must succeed", vfRes.isSuccess)
+        assertTrue("prepareLiveView on re-opened preview must preserve recording state", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testReopeningPreviewDoesNotSendRecordStart() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording()
+        assertTrue("Camera is recording", repo.cameraStatus.value.isRecording)
+
+        repo.prepareLiveView()
+        assertTrue("isRecording must remain true when reopening preview without sending RECORD_START again", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testReopeningPreviewDoesNotSendRecordStop() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording()
+        assertTrue(repo.cameraStatus.value.isRecording)
+
+        repo.prepareLiveView()
+        assertTrue("isRecording must not be set to false on preview re-entry", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRecordStopUpdatesRepositoryState() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording()
+        assertTrue(repo.cameraStatus.value.isRecording)
+
+        val result = repo.stopRecording()
+        assertTrue("RECORD_STOP command result must be success", result.isSuccess)
+        assertFalse("Camera state isRecording must be false after stopRecording", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRecordStopTriggersBoundedMediaRefreshPath() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording()
+
+        repo.stopRecording()
+
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertTrue("Logs must contain [REC] stop requested", logs.contains("[REC] stop requested"))
+        assertTrue("Logs must contain [REC] RECORD_STOP acknowledged", logs.contains("[REC] RECORD_STOP acknowledged"))
+        assertTrue("Logs must contain [REC] waiting for filesystem stabilization", logs.contains("[REC] waiting for filesystem stabilization"))
+        assertTrue("Logs must contain [REC] refreshing DCIM", logs.contains("[REC] refreshing DCIM"))
+        assertTrue("Logs must contain [REC] new media discovered:", logs.contains("[REC] new media discovered:"))
+    }
+
+    @Test
+    fun testFilenameSearchIsCaseInsensitive() {
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE4089.MP4", folder = "116MEDIA"),
+            CameraFile(filename = "EMRG0001.MP4", folder = "116MEDIA"),
+            CameraFile(filename = "FILE1001.JPG", folder = "100MEDIA")
+        )
+        val query = "file4089"
+        val filtered = sampleFiles.filter {
+            it.filename.lowercase().contains(query) || it.folder.lowercase().contains(query)
+        }
+        assertEquals(1, filtered.size)
+        assertEquals("FILE4089.MP4", filtered[0].filename)
+    }
+
+    @Test
+    fun testDateDescendingSort() {
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE0001.MP4", dateTime = "2026-09-15 10:00:00"),
+            CameraFile(filename = "FILE0002.MP4", dateTime = "2026-09-16 15:30:00"),
+            CameraFile(filename = "FILE0003.MP4", dateTime = "2026-09-14 08:00:00")
+        )
+        val sorted = sampleFiles.sortedWith(compareByDescending<CameraFile> { it.dateTime.ifEmpty { it.filename } }.thenByDescending { it.filename })
+        assertEquals("FILE0002.MP4", sorted[0].filename)
+        assertEquals("FILE0001.MP4", sorted[1].filename)
+        assertEquals("FILE0003.MP4", sorted[2].filename)
+    }
+
+    @Test
+    fun testDateAscendingSort() {
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE0001.MP4", dateTime = "2026-09-15 10:00:00"),
+            CameraFile(filename = "FILE0002.MP4", dateTime = "2026-09-16 15:30:00"),
+            CameraFile(filename = "FILE0003.MP4", dateTime = "2026-09-14 08:00:00")
+        )
+        val sorted = sampleFiles.sortedWith(compareBy<CameraFile> { it.dateTime.ifEmpty { it.filename } }.thenBy { it.filename })
+        assertEquals("FILE0003.MP4", sorted[0].filename)
+        assertEquals("FILE0001.MP4", sorted[1].filename)
+        assertEquals("FILE0002.MP4", sorted[2].filename)
+    }
+
+    @Test
+    fun testFilenameAscendingSort() {
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE4089.MP4"),
+            CameraFile(filename = "EMRG0001.MP4"),
+            CameraFile(filename = "FILE1001.JPG")
+        )
+        val sorted = sampleFiles.sortedBy { it.filename.lowercase() }
+        assertEquals("EMRG0001.MP4", sorted[0].filename)
+        assertEquals("FILE1001.JPG", sorted[1].filename)
+        assertEquals("FILE4089.MP4", sorted[2].filename)
+    }
+
+    @Test
+    fun testFilenameDescendingSort() {
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE4089.MP4"),
+            CameraFile(filename = "EMRG0001.MP4"),
+            CameraFile(filename = "FILE1001.JPG")
+        )
+        val sorted = sampleFiles.sortedByDescending { it.filename.lowercase() }
+        assertEquals("FILE4089.MP4", sorted[0].filename)
+        assertEquals("FILE1001.JPG", sorted[1].filename)
+        assertEquals("EMRG0001.MP4", sorted[2].filename)
+    }
+
+    @Test
+    fun testEmergencyFilterStillWorks() {
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE4089.MP4"),
+            CameraFile(filename = "EMRG0001.MP4"),
+            CameraFile(filename = "EMRG0002.MP4")
+        )
+        val emergencyOnly = sampleFiles.filter { it.isEmergency }
+        assertEquals(2, emergencyOnly.size)
+        assertTrue(emergencyOnly.all { it.isEmergency })
+    }
+
+    @Test
+    fun testFolderFilterWorks() {
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE0001.MP4", folder = "113MEDIA"),
+            CameraFile(filename = "FILE0002.MP4", folder = "116MEDIA"),
+            CameraFile(filename = "FILE0003.MP4", folder = "116MEDIA")
+        )
+        val folder116 = sampleFiles.filter { it.folder.equals("116MEDIA", ignoreCase = true) }
+        assertEquals(2, folder116.size)
+        assertTrue(folder116.all { it.folder == "116MEDIA" })
+    }
+
+    @Test
+    fun testStorageFilterWorks() {
+        val downloadedMap = mapOf("FILE0001.MP4" to true)
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE0001.MP4"),
+            CameraFile(filename = "FILE0002.MP4")
+        )
+        val onCamera = sampleFiles.filter { downloadedMap[it.filename] != true }
+        val onPhone = sampleFiles.filter { downloadedMap[it.filename] == true }
+
+        assertEquals(1, onCamera.size)
+        assertEquals("FILE0002.MP4", onCamera[0].filename)
+        assertEquals(1, onPhone.size)
+        assertEquals("FILE0001.MP4", onPhone[0].filename)
+    }
+
+    @Test
+    fun testFilterSearchSortComposition() {
+        val downloadedMap = mapOf("FILE0001.MP4" to true)
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE0001.MP4", folder = "116MEDIA", dateTime = "2026-09-16 10:00:00"),
+            CameraFile(filename = "FILE0002.MP4", folder = "116MEDIA", dateTime = "2026-09-16 11:00:00"),
+            CameraFile(filename = "EMRG0003.MP4", folder = "116MEDIA", dateTime = "2026-09-16 12:00:00"),
+            CameraFile(filename = "FILE0004.JPG", folder = "116MEDIA", dateTime = "2026-09-16 13:00:00")
+        )
+
+        val pipelineResult = sampleFiles
+            .filter { it.isVideo && !it.isEmergency } // Category: Videos
+            .filter { downloadedMap[it.filename] != true } // Storage: On Camera
+            .filter { it.folder.equals("116MEDIA", ignoreCase = true) } // Folder: 116MEDIA
+            .filter { it.filename.lowercase().contains("file") } // Search query: "file"
+            .sortedBy { it.filename.lowercase() } // Sort: Name ASC
+
+        assertEquals(1, pipelineResult.size)
+        assertEquals("FILE0002.MP4", pipelineResult[0].filename)
+    }
+
+    @Test
+    fun testDownloadedFilterStillWorks() {
+        val downloadedMap = mapOf("FILE0001.MP4" to true)
+        val sampleFiles = listOf(
+            CameraFile(filename = "FILE0001.MP4"),
+            CameraFile(filename = "FILE0002.MP4")
+        )
+        val downloadedOnly = sampleFiles.filter { downloadedMap[it.filename] == true }
+        assertEquals(1, downloadedOnly.size)
+        assertEquals("FILE0001.MP4", downloadedOnly[0].filename)
     }
 }

@@ -4,20 +4,25 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,7 +47,14 @@ fun FileManagerScreen(
 ) {
     val context = LocalContext.current
     val files by viewModel.files.collectAsState()
+    val rawFilesCount by viewModel.rawFilesCount.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val storageFilter by viewModel.storageFilter.collectAsState()
+    val folderFilter by viewModel.folderFilter.collectAsState()
+    val availableFolders by viewModel.availableFolders.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val sortMode by viewModel.sortMode.collectAsState()
+
     val isLoading by viewModel.isLoading.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
     val exportProgressMap by viewModel.exportProgressMap.collectAsState()
@@ -50,6 +62,7 @@ fun FileManagerScreen(
     var fileToDelete by remember { mutableStateOf<CameraFile?>(null) }
     var fileToPlay by remember { mutableStateOf<CameraFile?>(null) }
     var fileToViewPhoto by remember { mutableStateOf<CameraFile?>(null) }
+    var showSortDropdown by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -77,26 +90,88 @@ fun FileManagerScreen(
                 )
             }
 
-            IconButton(onClick = { viewModel.loadFiles() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Yenile", tint = PrimaryCyan)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Sort Dropdown Button
+                Box {
+                    OutlinedButton(
+                        onClick = { showSortDropdown = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryCyan)
+                    ) {
+                        Icon(Icons.Default.Sort, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = sortMode.label,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
+
+                    DropdownMenu(
+                        expanded = showSortDropdown,
+                        onDismissRequest = { showSortDropdown = false }
+                    ) {
+                        SortMode.values().forEach { mode ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = mode.label,
+                                        fontWeight = if (sortMode == mode) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (sortMode == mode) PrimaryCyan else MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.setSortMode(mode)
+                                    showSortDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                IconButton(onClick = { viewModel.loadFiles() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Yenile", tint = PrimaryCyan)
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Filter Category Chips
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Search Bar
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { viewModel.setSearchQuery(it) },
+            placeholder = { Text("Kayıtlarda ara (örn: FILE4089, EMRG, 116MEDIA)...", fontSize = 12.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = PrimaryCyan) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Temizle", tint = Color.Gray)
+                    }
+                }
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Category Filter Chips
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            FileFilterCategory.values().forEach { category ->
+            items(FileFilterCategory.values()) { category ->
                 val isSelected = selectedCategory == category
                 FilterChip(
                     selected = isSelected,
                     onClick = { viewModel.setCategory(category) },
-                    label = { Text(category.label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text(category.label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = PrimaryCyan,
                         selectedLabelColor = DarkBackground,
@@ -107,14 +182,72 @@ fun FileManagerScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Storage & Folder Filter Row
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Storage Filters
+            items(StorageFilter.values()) { filter ->
+                val isSelected = storageFilter == filter
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { viewModel.setStorageFilter(filter) },
+                    label = { Text(filter.label, fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = SuccessGreen.copy(alpha = 0.3f),
+                        selectedLabelColor = SuccessGreen,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            }
+
+            // Dynamic Folder Filters
+            if (availableFolders.isNotEmpty()) {
+                item {
+                    val isAllFolder = folderFilter == "ALL"
+                    FilterChip(
+                        selected = isAllFolder,
+                        onClick = { viewModel.setFolderFilter("ALL") },
+                        label = { Text("Tüm Klasörler", fontSize = 11.sp) }
+                    )
+                }
+                items(availableFolders) { folder ->
+                    val isSelected = folderFilter == folder
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { viewModel.setFolderFilter(folder) },
+                        label = { Text(folder, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PrimaryCyan.copy(alpha = 0.25f),
+                            selectedLabelColor = PrimaryCyan,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Result Summary & Status
         if (!statusMessage.isNullOrEmpty()) {
-            Text(
-                text = statusMessage!!,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = statusMessage!!,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PrimaryCyan
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
         }
 
@@ -134,14 +267,14 @@ fun FileManagerScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Kamerada gösterilecek kayıt bulunamadı.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Görüntülenecek kayıt bulunamadı.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(files) { file ->
+                items(files, key = { it.filename }) { file ->
                     val exportProgress = exportProgressMap[file.filename]
                     FileRowItem(
                         file = file,
@@ -278,9 +411,13 @@ fun FileRowItem(
                             Text(
                                 text = "${file.mediaTypeLabel} • ${file.formattedSize}",
                                 fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 color = if (file.isEmergency) RecordRed else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.width(6.dp))
+
+                            // Folder Badge (Single-line guarantee)
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
                                 color = PrimaryCyan.copy(alpha = 0.15f)
@@ -297,7 +434,7 @@ fun FileRowItem(
                             }
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            // Telefonda / Kamerada Badges
+                            // Single-line Status Badges ("Telefonda" / "Kamerada")
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
                                 color = if (isDownloadedOnPhone) SuccessGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
@@ -306,8 +443,11 @@ fun FileRowItem(
                                     text = if (isDownloadedOnPhone) "Telefonda" else "Kamerada",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
                                     color = if (isDownloadedOnPhone) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
@@ -316,6 +456,8 @@ fun FileRowItem(
                             Text(
                                 text = file.dateTime,
                                 fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                             )
                         }
@@ -347,7 +489,7 @@ fun FileRowItem(
                 }
                 IconButton(onClick = onOpenExternalClick) {
                     Icon(
-                        imageVector = Icons.Default.OpenInNew,
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                         contentDescription = "Aç",
                         tint = Color.White
                     )

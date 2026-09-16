@@ -90,7 +90,7 @@ fun ConnectionScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = "Field Test RC7",
+                                text = "Field Test RC7.1",
                                 color = PrimaryCyan,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -393,11 +393,13 @@ fun ConnectionScreen(
                     )
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Kamera Modeli:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Kamera Modeli:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "SanJet DR38AS (ASUS RECO Smart)",
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 

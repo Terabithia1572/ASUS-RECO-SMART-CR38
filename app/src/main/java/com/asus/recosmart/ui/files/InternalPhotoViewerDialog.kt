@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -31,6 +32,7 @@ import com.asus.recosmart.ui.theme.PrimaryCyan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -46,13 +48,33 @@ fun InternalPhotoViewerDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var actionStatusText by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableIntStateOf(-1) }
+    var extractedDimensions by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(file.httpUrl) {
         CameraNetworkManager.bindProcessToWifi(context)
         withContext(Dispatchers.IO) {
             try {
-                val url = URL(file.httpUrl)
-                val conn = url.openConnection() as HttpURLConnection
+                // Step 1: Decode bounds first without full memory allocation (inJustDecodeBounds)
+                val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                val connBounds = URL(file.httpUrl).openConnection() as HttpURLConnection
+                connBounds.connectTimeout = 5000
+                connBounds.readTimeout = 5000
+                connBounds.doInput = true
+                connBounds.connect()
+                val boundsStream: InputStream = connBounds.inputStream
+                BitmapFactory.decodeStream(boundsStream, null, boundsOptions)
+                boundsStream.close()
+                connBounds.disconnect()
+
+                val width = boundsOptions.outWidth
+                val height = boundsOptions.outHeight
+                if (width > 0 && height > 0) {
+                    val mp = (width.toLong() * height.toLong()) / 1_000_000.0
+                    extractedDimensions = "Gerçek dosya çözünürlüğü: ${width} × ${height} (~${"%.1f".format(mp)} MP)"
+                }
+
+                // Step 2: Download stream for full bitmap display
+                val conn = URL(file.httpUrl).openConnection() as HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
                 conn.doInput = true
@@ -64,6 +86,10 @@ fun InternalPhotoViewerDialog(
 
                 if (bitmap != null) {
                     bitmapState = bitmap
+                    if (extractedDimensions == null) {
+                        val mp = (bitmap.width.toLong() * bitmap.height.toLong()) / 1_000_000.0
+                        extractedDimensions = "Gerçek dosya çözünürlüğü: ${bitmap.width} × ${bitmap.height} (~${"%.1f".format(mp)} MP)"
+                    }
                 } else {
                     errorMessage = "Fotoğraf çözümlenemedi."
                 }
@@ -116,13 +142,43 @@ fun InternalPhotoViewerDialog(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Photo Resolution Truthfulness Info Banner
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = PrimaryCyan, modifier = Modifier.size(18.dp))
+                        Column {
+                            Text(
+                                text = extractedDimensions ?: "Görsel meta verisi bekleniyor...",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryCyan
+                            )
+                            Text(
+                                text = "CR38 kamerası wire ayarlarını kabul etse bile çıktı dosyasını donanım piksel çözünürlüğünde oluşturur.",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Photo Container
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(320.dp)
+                        .height(300.dp)
                         .background(Color.Black, shape = RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {

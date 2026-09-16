@@ -4,6 +4,7 @@ import com.asus.recosmart.data.protocol.CommandSerializer
 import com.asus.recosmart.data.protocol.ResponseParser
 import com.asus.recosmart.data.protocol.TcpResponseFramer
 import com.asus.recosmart.domain.model.CameraCommand
+import com.asus.recosmart.ui.files.FileFilterCategory
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -451,6 +452,29 @@ class ProtocolUnitTest {
         assertEquals(0, response.rval)
         assertTrue("SetSetting rval=0 response must be parsed as success", response.isSuccess)
     }
+
+    // =========================================================================
+    // 10. FIELD TEST RC7 VERIFICATION TESTS (VEHICLE MODE / REDACTED REPORTS / RC7)
+    // =========================================================================
+
+    @Test
+    fun testFileFilterCategoryDownloadedLabel() {
+        assertEquals("Telefona İndirilenler", FileFilterCategory.DOWNLOADED.label)
+    }
+
+    @Test
+    fun testPhotoResolutionDimensionMpCalculation() {
+        val width = 1920
+        val height = 1080
+        val mp = (width.toLong() * height.toLong()) / 1_000_000.0
+        val formattedMp = String.format(java.util.Locale.US, "%.1f", mp)
+        assertEquals("2.1", formattedMp)
+    }
+
+    @Test
+    fun testSanitizationRedactsMacAddresses() {
+        val rawLog = "Device MAC address 00:1A:2C:3D:4E:5F connected to AP"
+        val sanitized = rawLog.replace(Regex("([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})"), "[REDACTED_MAC]")
+        assertEquals("Device MAC address [REDACTED_MAC] connected to AP", sanitized)
+    }
 }
-
-

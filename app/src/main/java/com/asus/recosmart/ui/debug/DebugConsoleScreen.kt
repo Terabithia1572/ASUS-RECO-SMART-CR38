@@ -3,20 +3,21 @@ package com.asus.recosmart.ui.debug
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,11 +26,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.asus.recosmart.ui.theme.DarkBackground
 import com.asus.recosmart.ui.theme.PrimaryCyan
 import com.asus.recosmart.ui.theme.RecordRed
+import com.asus.recosmart.ui.theme.SuccessGreen
 
 @Composable
 fun DebugConsoleScreen(
     viewModel: DebugConsoleViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val debugLogs by viewModel.debugLogs.collectAsState()
     val cameraStatus by viewModel.cameraStatus.collectAsState()
     val customMsgId by viewModel.customMsgId.collectAsState()
@@ -41,14 +44,11 @@ fun DebugConsoleScreen(
             .background(DarkBackground)
             .padding(16.dp)
     ) {
-        val context = androidx.compose.ui.platform.LocalContext.current
-
-        // Responsive 3-Row Header Layout
+        // Header Layout
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Row 1: Title & Icon
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Terminal, contentDescription = null, tint = PrimaryCyan)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -60,15 +60,14 @@ fun DebugConsoleScreen(
                 )
             }
 
-            // Row 2: Subtitle Metadata
             Text(
                 text = "TCP Port 7878 JSON Frames | Token: ${cameraStatus.activeToken}",
                 style = MaterialTheme.typography.labelSmall,
                 color = PrimaryCyan
             )
 
-            // Row 3: Scrollable Action Buttons
-            androidx.compose.foundation.lazy.LazyRow(
+            // Action Buttons
+            LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -78,9 +77,21 @@ fun DebugConsoleScreen(
                         onClick = { viewModel.runHardwareDiagnostic() },
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = com.asus.recosmart.ui.theme.SuccessGreen)
+                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
                     ) {
-                        Text("Donanım Tanılama", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                        Text("Donanım Tanılama", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+                item {
+                    Button(
+                        onClick = { viewModel.copySanitizedReportToClipboard(context) },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryCyan)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp), tint = DarkBackground)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Tanılama Raporunu Kopyala", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DarkBackground)
                     }
                 }
                 item {
@@ -90,13 +101,7 @@ fun DebugConsoleScreen(
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
-                        Text(
-                            text = "Mock Self-Test",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryCyan,
-                            maxLines = 1
-                        )
+                        Text("Mock Self-Test", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryCyan)
                     }
                 }
                 item {
@@ -115,7 +120,7 @@ fun DebugConsoleScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         // Quick Command Chips
-        val quickCommands = androidx.compose.runtime.remember {
+        val quickCommands = remember {
             listOf(
                 "START_SESSION" to ("257" to ""),
                 "GET_SETTINGS" to ("3" to ""),
@@ -130,7 +135,7 @@ fun DebugConsoleScreen(
             )
         }
 
-        androidx.compose.foundation.lazy.LazyRow(
+        LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -152,7 +157,7 @@ fun DebugConsoleScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         // Raw Command Sender Terminal Bar
-        val isDestructiveMsgId = androidx.compose.runtime.remember(customMsgId) {
+        val isDestructiveMsgId = remember(customMsgId) {
             val id = customMsgId.toIntOrNull()
             id in setOf(4, 1281, 53258, 53272, 1286, 53275)
         }
@@ -198,7 +203,7 @@ fun DebugConsoleScreen(
                 if (isDestructiveMsgId) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "⚠️ CAUTION: Sensitive/Destructive command msg_id $customMsgId",
+                        text = "⚠️ DİKKAT: Hassas/Silici komut msg_id $customMsgId",
                         color = RecordRed,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -218,7 +223,7 @@ fun DebugConsoleScreen(
         ) {
             if (debugLogs.isEmpty()) {
                 Text(
-                    text = "No protocol logs captured yet. Execute commands or connect to view raw JSON frames.",
+                    text = "Henüz protokol logu yakalanmadı. JSON karelerini görmek için komut çalıştırın veya kameraya bağlanın.",
                     color = Color.Gray,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp

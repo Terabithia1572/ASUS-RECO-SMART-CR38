@@ -18,7 +18,8 @@ enum class FileFilterCategory(val label: String) {
     ALL("Tümü"),
     VIDEOS("Videolar"),
     PHOTOS("Fotoğraflar"),
-    EMERGENCY("Acil Durum")
+    EMERGENCY("Acil Durum"),
+    DOWNLOADED("Telefona İndirilenler")
 }
 
 data class FileExportProgress(
@@ -92,6 +93,7 @@ class FileManagerViewModel(
             if (result.isSuccess) {
                 val uri = result.getOrThrow()
                 updateExportProgress(key, FileExportProgress(progressPercent = 100, isDownloading = false, savedUri = uri))
+                applyFilter()
                 _statusMessage.value = "$label telefona kaydedildi!"
                 onComplete?.invoke(uri)
             } else {
@@ -186,6 +188,7 @@ class FileManagerViewModel(
             FileFilterCategory.VIDEOS -> raw.filter { it.isVideo && !it.isEmergency }
             FileFilterCategory.PHOTOS -> raw.filter { it.isPhoto }
             FileFilterCategory.EMERGENCY -> raw.filter { it.isEmergency }
+            FileFilterCategory.DOWNLOADED -> raw.filter { _exportProgressMap.value[it.filename]?.savedUri != null }
         }
     }
 

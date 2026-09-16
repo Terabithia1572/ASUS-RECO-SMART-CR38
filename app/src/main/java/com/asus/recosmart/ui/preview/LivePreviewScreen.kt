@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -57,10 +58,10 @@ fun LivePreviewScreen(
 
     var rtspStreamState by remember { mutableStateOf("Connecting to RTSP...") }
     var isPlayerError by remember { mutableStateOf(false) }
-
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    var showStopRecordingDialog by remember { mutableStateOf(false) }
 
-    // RTSP ExoPlayer Lifecycle handling with verified RESET_TO_VF -> RTSP -> STOP_VF sequence
+    // RTSP ExoPlayer Lifecycle handling
     DisposableEffect(isRealConnected) {
         var localPlayer: ExoPlayer? = null
         var isFallbackAttempted = false
@@ -82,12 +83,7 @@ fun LivePreviewScreen(
                     .createMediaSource(mediaItem)
 
                 val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(
-                        250, // minBufferMs
-                        500, // maxBufferMs
-                        100, // bufferForPlaybackMs
-                        250  // bufferForPlaybackAfterRebufferMs
-                    )
+                    .setBufferDurationsMs(250, 500, 100, 250)
                     .build()
 
                 val player = ExoPlayer.Builder(context)
@@ -97,53 +93,22 @@ fun LivePreviewScreen(
                     addListener(object : Player.Listener {
                         override fun onPlaybackStateChanged(playbackState: Int) {
                             when (playbackState) {
-                                Player.STATE_BUFFERING -> {
-                                    rtspStreamState = "Buffering..."
-                                    viewModel.logRtsp("[RTSP PLAYER] State: BUFFERING")
-                                }
-                                Player.STATE_READY -> {
-                                    val readyTime = System.currentTimeMillis()
-                                    viewModel.logRtsp("[TIMING] PLAYER_READY (+${readyTime - playerInitTime}ms, total +${readyTime - requestTimestamp}ms)")
-                                    if (isPlaying) {
-                                        rtspStreamState = "Live"
-                                    } else {
-                                        rtspStreamState = "Ready (paused)"
-                                    }
-                                }
-                                Player.STATE_ENDED -> {
-                                    rtspStreamState = "Stream ended"
-                                    viewModel.logRtsp("[RTSP PLAYER] State: ENDED")
-                                }
-                                Player.STATE_IDLE -> {
-                                    rtspStreamState = "Idle"
-                                    viewModel.logRtsp("[RTSP PLAYER] State: IDLE")
-                                }
+                                Player.STATE_BUFFERING -> rtspStreamState = "Buffering..."
+                                Player.STATE_READY -> rtspStreamState = if (isPlaying) "Live" else "Ready (paused)"
+                                Player.STATE_ENDED -> rtspStreamState = "Stream ended"
+                                Player.STATE_IDLE -> rtspStreamState = "Idle"
                             }
                         }
 
-                        override fun onIsPlayingChanged(isPlaying: Boolean) {
-                            viewModel.logRtsp("[RTSP PLAYER] Playing: $isPlaying")
-                        }
-
                         override fun onRenderedFirstFrame() {
-                            val frameTime = System.currentTimeMillis()
                             rtspStreamState = "Live"
-                            viewModel.logRtsp("[TIMING] FIRST_FRAME_RENDERED (+${frameTime - playerInitTime}ms, total startup +${frameTime - requestTimestamp}ms)")
                             viewModel.setFirstVideoFrameRendered(true)
-                        }
-
-                        override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                            viewModel.logRtsp("[RTSP PLAYER] Video size: ${videoSize.width}x${videoSize.height}")
                         }
 
                         override fun onPlayerError(error: PlaybackException) {
                             val errDetail = error.localizedMessage ?: error.errorCodeName
-                            val causeMsg = error.cause?.localizedMessage ?: "Unknown cause"
-                            viewModel.logRtsp("[RTSP PLAYER ERROR] Code: ${error.errorCodeName} ($errDetail), Cause: $causeMsg")
-
                             if (!isFallbackAttempted) {
                                 isFallbackAttempted = true
-                                viewModel.logRtsp("[RTSP PLAYER] Attempting transport fallback (ForceRtpTcp=${!forceTcp})...")
                                 localPlayer?.release()
                                 createAndStartPlayer(!forceTcp)
                             } else {
@@ -152,8 +117,6 @@ fun LivePreviewScreen(
                             }
                         }
                     })
-                    val prepareTime = System.currentTimeMillis()
-                    viewModel.logRtsp("[TIMING] PLAYER_PREPARE at $prepareTime")
                     prepare()
                     playWhenReady = true
                 }
@@ -162,20 +125,16 @@ fun LivePreviewScreen(
             }
 
             viewModel.prepareLiveView { success, errorMsg ->
-                val vfTime = System.currentTimeMillis()
-                viewModel.logRtsp("[TIMING] RESET_TO_VF_COMPLETED (+${vfTime - requestTimestamp}ms, success=$success)")
                 if (!success) {
                     isPlayerError = true
                     rtspStreamState = errorMsg ?: "RESET_TO_VF failed"
                     return@prepareLiveView
                 }
-
                 rtspStreamState = "Connecting to RTSP..."
                 createAndStartPlayer(forceTcp = false)
             }
 
             onDispose {
-                viewModel.logRtsp("[RTSP PLAYER] Releasing player and stopping live view")
                 viewModel.setFirstVideoFrameRendered(false)
                 localPlayer?.stop()
                 localPlayer?.release()
@@ -187,33 +146,16 @@ fun LivePreviewScreen(
         }
     }
 
-    // App Pause / Resume Observer
     DisposableEffect(lifecycleOwner, exoPlayer) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    exoPlayer?.let { player ->
-                        if (player.isPlaying) {
-                            player.pause()
-                            viewModel.logRtsp("[RTSP] Paused")
-                        }
-                    }
-                }
-                Lifecycle.Event.ON_RESUME -> {
-                    exoPlayer?.let { player ->
-                        if (!player.isPlaying && isRealConnected) {
-                            player.play()
-                            viewModel.logRtsp("[RTSP] Playing")
-                        }
-                    }
-                }
+                Lifecycle.Event.ON_PAUSE -> exoPlayer?.pause()
+                Lifecycle.Event.ON_RESUME -> if (isRealConnected && exoPlayer?.isPlaying == false) exoPlayer?.play()
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "RecordPulse")
@@ -226,6 +168,31 @@ fun LivePreviewScreen(
         ),
         label = "Alpha"
     )
+
+    // Stop Recording Confirmation Dialog
+    if (showStopRecordingDialog) {
+        AlertDialog(
+            onDismissRequest = { showStopRecordingDialog = false },
+            title = { Text("Kaydı Durdur?", fontWeight = FontWeight.Bold) },
+            text = { Text("Kamera şu anda kayıt yapıyor. Kaydı durdurmak istiyor musunuz?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showStopRecordingDialog = false
+                        viewModel.toggleRecording()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RecordRed)
+                ) {
+                    Text("Kaydı Durdur", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showStopRecordingDialog = false }) {
+                    Text("İptal")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -246,7 +213,6 @@ fun LivePreviewScreen(
             contentAlignment = Alignment.Center
         ) {
             when {
-                // Mock Debug Mode ON
                 isMockMode -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -272,7 +238,6 @@ fun LivePreviewScreen(
                     }
                 }
 
-                // Real Mode but Not Connected
                 !isRealConnected -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -302,7 +267,6 @@ fun LivePreviewScreen(
                     }
                 }
 
-                // Real Mode & Connected -> Show ExoPlayer
                 else -> {
                     exoPlayer?.let { player ->
                         AndroidView(
@@ -319,7 +283,6 @@ fun LivePreviewScreen(
                         )
                     }
 
-                    // Show player status banner overlay when connecting / buffering / error
                     if (isPlayerError || rtspStreamState != "Live") {
                         val displayState = when (rtspStreamState) {
                             "Preparing Viewfinder (RESET_TO_VF)..." -> "Viewfinder hazırlanıyor (RESET_TO_VF)..."
@@ -366,12 +329,19 @@ fun LivePreviewScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "REC",
+                            text = "KAYIT",
                             color = RecordRed,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                     } else {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color.Green)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "HAZIR",
                             color = Color.Green,
@@ -393,7 +363,29 @@ fun LivePreviewScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Hardware Emergency Recording Info Banner
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = PrimaryCyan, modifier = Modifier.size(16.dp))
+                Text(
+                    text = "Acil Kayıt — Donanım desteği araştırılıyor",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (!statusText.isNullOrEmpty()) {
             Text(
@@ -402,7 +394,7 @@ fun LivePreviewScreen(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Camera Controls Toolbar
@@ -428,9 +420,15 @@ fun LivePreviewScreen(
                 )
             }
 
-            // Record Start / Stop Button
+            // Record Start / Stop Button with Confirmation Dialog
             FloatingActionButton(
-                onClick = { viewModel.toggleRecording() },
+                onClick = {
+                    if (cameraStatus.isRecording) {
+                        showStopRecordingDialog = true
+                    } else {
+                        viewModel.toggleRecording()
+                    }
+                },
                 containerColor = if (cameraStatus.isRecording) RecordRed else PrimaryCyan,
                 contentColor = Color.White,
                 shape = CircleShape,
@@ -445,4 +443,3 @@ fun LivePreviewScreen(
         }
     }
 }
-

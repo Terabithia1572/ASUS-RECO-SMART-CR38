@@ -13,6 +13,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+enum class SettingCategory(val title: String) {
+    VIDEO("Video Ayarları"),
+    PHOTO("Fotoğraf Ayarları"),
+    SECURITY("Güvenlik ve Sürüş"),
+    IMAGE("Görüntü ve Tarih Damgası"),
+    SYSTEM("Sistem ve Bakım")
+}
+
+data class CategorizedSettings(
+    val category: SettingCategory,
+    val specs: List<CameraSettingSpec>
+)
 
 class SettingsViewModel(
     private val repository: CameraRepository = RecoSmartApp.instance.cameraRepository
@@ -55,6 +71,30 @@ class SettingsViewModel(
         }
     }
 
+    fun syncCameraClock() {
+        if (_isSettingMutationInProgress.value) return
+        viewModelScope.launch {
+            _isSettingMutationInProgress.value = true
+            _statusText.value = "Kamera saati telefonla eşitleniyor..."
+            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+            val formattedTime = sdf.format(Date())
+            repository.logRtsp("[CLOCK SYNC] Synchronizing camera clock to local phone time: '$formattedTime'")
+
+            val res = repository.updateSetting("camera_clock", formattedTime)
+            if (res.isSuccess && res.getOrNull()?.isSuccess == true) {
+                _statusText.value = "Kamera saati başarıyla eşitlendi: $formattedTime"
+            } else {
+                val resFallback = repository.updateSetting("time", formattedTime)
+                if (resFallback.isSuccess && resFallback.getOrNull()?.isSuccess == true) {
+                    _statusText.value = "Kamera saati başarıyla eşitlendi: $formattedTime"
+                } else {
+                    _statusText.value = "Kamera saati eşitleme komutu gönderildi: $formattedTime"
+                }
+            }
+            _isSettingMutationInProgress.value = false
+        }
+    }
+
     fun updateSetting(key: String, wireValue: String) {
         if (_isSettingMutationInProgress.value) {
             repository.logRtsp("[SETTINGS REJECTED] Mutation already in progress. Request key='$key' ignored.")
@@ -87,7 +127,6 @@ class SettingsViewModel(
         repository.logRtsp("[RESOLUTION] Target resolution: '$optionName' ($wireValue)")
         repository.logRtsp("[RESOLUTION] Recording state before change: ${if (wasRecordingBefore) "RECORDING" else "NOT_RECORDING"}")
 
-        // Step 1: Safely stop recording if active
         if (wasRecordingBefore) {
             _statusText.value = "Video çözünürlüğü değiştirmek için kayıt geçici olarak durduruluyor..."
             repository.logRtsp("[RESOLUTION] Step 1/6: Sending RECORD_STOP...")
@@ -100,7 +139,6 @@ class SettingsViewModel(
             delay(600)
         }
 
-        // Step 2: Apply resolution setting
         _statusText.value = "Video çözünürlüğü uygulanıyor..."
         repository.logRtsp("[RESOLUTION] Step 3/6: Sending SET_SETTING video_resolution='$wireValue'...")
         val setStartTime = System.currentTimeMillis()
@@ -109,12 +147,10 @@ class SettingsViewModel(
         val setAckSuccess = setRes.isSuccess && setRes.getOrNull()?.isSuccess == true
         repository.logRtsp("[RESOLUTION] SET_SETTING acknowledged after ${setElapsed}ms (success=$setAckSuccess)")
 
-        // Step 3: Hardware stabilization delay before read-back
         _statusText.value = "Donanım ayarı işliyor, bekleniyor..."
         repository.logRtsp("[RESOLUTION] Step 4/6: Waiting for hardware encoder re-initialization (1200ms)...")
         delay(1200)
 
-        // Step 4: Verification read-back with 1-shot recovery if socket closed
         _statusText.value = "Video çözünürlüğü doğrulanıyor..."
         repository.logRtsp("[RESOLUTION] Step 5/6: Verifying setting via GET_ALL_CURRENT_SETTINGS...")
         var verifyRes = repository.fetchAllSettings()
@@ -140,11 +176,9 @@ class SettingsViewModel(
         }
         val isVerified = confirmedVal == wireValue
 
-        // Step 5: Re-prepare Viewfinder/Stream
         repository.logRtsp("[RESOLUTION] Restoring viewfinder stream state...")
         repository.resetToVf()
 
-        // Step 6: Restart recording if previously active and session is healthy
         if (wasRecordingBefore && repository.sessionState.value is SessionState.Connected) {
             _statusText.value = "Kayıt yeniden başlatılıyor..."
             repository.logRtsp("[RESOLUTION] Step 6/6: Restarting previous recording state (RECORD_START)...")
@@ -154,7 +188,6 @@ class SettingsViewModel(
             repository.logRtsp("[RESOLUTION] RECORD_START acknowledged after ${recElapsed}ms (success=${startRes.isSuccess})")
         }
 
-        // Final UI Status Display
         when {
             isVerified -> {
                 _statusText.value = "Video çözünürlüğü doğrulandı: $optionName"
@@ -271,10 +304,15 @@ class SettingsViewModel(
         val defaultRecMode = fetched["rec mode"]?.value ?: "continuous"
         val defaultLoopRec = fetched["loop record"]?.value ?: "LOOP_REC_3_MIN"
         val defaultGSensor = fetched["gs sense"]?.value ?: "medium"
+        val defaultMotionDet = fetched["motion_det"]?.value ?: "off"
+        val defaultLdws = fetched["ldws"]?.value ?: "off"
+        val defaultFcws = fetched["fcws"]?.value ?: "off"
         val defaultPhotoBurst = fetched["photo burst"]?.value ?: "5p1s"
         val defaultTimeLapse = fetched["photo time lapse"]?.value ?: "1ps"
         val defaultEV = fetched["ev value"]?.value ?: "0.0ev"
+        val defaultDateStamp = fetched["date_stamp"]?.value ?: "ON"
         val defaultRotate = fetched["image rotate"]?.value ?: "NORMAL"
+        val defaultStartupRec = fetched["startup_record"]?.value ?: "ON"
         val defaultSysMode = fetched["sys mode"]?.value ?: "CAR_MODE"
         val defaultLang = fetched["language"]?.value ?: "ENG"
         val defaultMic = fetched["microphone"]?.value ?: "on"
@@ -282,6 +320,7 @@ class SettingsViewModel(
         val defaultSsid = fetched["wifi_ssid"]?.value ?: "CR38_ASUS_9F82"
 
         return listOf(
+            // Video
             CameraSettingSpec(
                 key = "video_resolution",
                 label = "Video Çözünürlüğü",
@@ -297,33 +336,8 @@ class SettingsViewModel(
                 currentWireValue = defaultVideoRes
             ),
             CameraSettingSpec(
-                key = "photo_size",
-                label = "Fotoğraf Çözünürlüğü",
-                description = "Fotoğraf boyutları ve en-boy oranı",
-                options = listOf(
-                    CameraSettingOption("16 MP • 4608×3456 (4:3)", "16M (4608x3456 4:3)"),
-                    CameraSettingOption("8 MP • 3264×2448 (4:3)", "8M (3264x2448 4:3)"),
-                    CameraSettingOption("3.8 MP • 2304×1536 (3:2)", "3.8M (2304x1536 3:2)"),
-                    CameraSettingOption("3 MP • 2048×1536 (4:3)", "3M (2048x1536 4:3)"),
-                    CameraSettingOption("2.8 MP • 2304×1296 (16:9)", "2.8M (2304x1296 16:9)"),
-                    CameraSettingOption("0.3 MP • 640×480 (4:3)", "0.3M (640x480 4:3)")
-                ),
-                currentWireValue = defaultPhotoSize
-            ),
-            CameraSettingSpec(
-                key = "rec mode",
-                label = "Kayıt Modu",
-                description = "Video kayıt süre profili",
-                options = listOf(
-                    CameraSettingOption("Sürekli", "continuous"),
-                    CameraSettingOption("5 Dakika", "5min"),
-                    CameraSettingOption("3 Dakika", "3min")
-                ),
-                currentWireValue = defaultRecMode
-            ),
-            CameraSettingSpec(
                 key = "loop record",
-                label = "Döngüsel Kayıt",
+                label = "Döngüsel Kayıt Süresi",
                 description = "Acil durum çarpışma döngü dosya süresi",
                 options = listOf(
                     CameraSettingOption("1 Dakika", "LOOP_REC_1_MIN"),
@@ -333,16 +347,43 @@ class SettingsViewModel(
                 currentWireValue = defaultLoopRec
             ),
             CameraSettingSpec(
-                key = "gs sense",
-                label = "G-Sensör Hassasiyeti",
-                description = "Darbe ve çarpışma algılama tetikleyicisi",
+                key = "microphone",
+                label = "Mikrofon Ses Kaydı",
+                description = "Araç içi ses kaydı",
                 options = listOf(
-                    CameraSettingOption("Kapalı", "off"),
-                    CameraSettingOption("Düşük Hassasiyet", "low"),
-                    CameraSettingOption("Orta Hassasiyet", "medium"),
-                    CameraSettingOption("Yüksek Hassasiyet", "high")
+                    CameraSettingOption("Açık", "on"),
+                    CameraSettingOption("Kapalı", "off")
                 ),
-                currentWireValue = defaultGSensor
+                currentWireValue = defaultMic
+            ),
+            CameraSettingSpec(
+                key = "ev value",
+                label = "Pozlama Değeri (EV)",
+                description = "Sensör pozlama telafisi",
+                options = listOf(
+                    CameraSettingOption("-2.0 EV", "-2.0ev"),
+                    CameraSettingOption("-1.0 EV", "-1.0ev"),
+                    CameraSettingOption("0.0 EV (Standart)", "0.0ev"),
+                    CameraSettingOption("+1.0 EV", "1.0ev"),
+                    CameraSettingOption("+2.0 EV", "2.0ev")
+                ),
+                currentWireValue = defaultEV
+            ),
+
+            // Fotoğraf
+            CameraSettingSpec(
+                key = "photo_size",
+                label = "Fotoğraf Çözünürlüğü",
+                description = "Fotoğraf boyutları (Kamera wire ayarı)",
+                options = listOf(
+                    CameraSettingOption("16 MP • 4608×3456 (4:3)", "16M (4608x3456 4:3)"),
+                    CameraSettingOption("8 MP • 3264×2448 (4:3)", "8M (3264x2448 4:3)"),
+                    CameraSettingOption("3.8 MP • 2304×1536 (3:2)", "3.8M (2304x1536 3:2)"),
+                    CameraSettingOption("3 MP • 2048×1536 (4:3)", "3M (2048x1536 4:3)"),
+                    CameraSettingOption("2.8 MP • 2304×1296 (16:9)", "2.8M (2304x1296 16:9)"),
+                    CameraSettingOption("0.3 MP • 640×480 (4:3)", "0.3M (640x480 4:3)")
+                ),
+                currentWireValue = defaultPhotoSize
             ),
             CameraSettingSpec(
                 key = "photo burst",
@@ -367,18 +408,61 @@ class SettingsViewModel(
                 ),
                 currentWireValue = defaultTimeLapse
             ),
+
+            // Güvenlik
             CameraSettingSpec(
-                key = "ev value",
-                label = "Pozlama Değeri (EV)",
-                description = "Sensör pozlama telafisi",
+                key = "gs sense",
+                label = "G-Sensör Hassasiyeti",
+                description = "Darbe ve çarpışma algılama tetikleyicisi",
                 options = listOf(
-                    CameraSettingOption("-2.0 EV", "-2.0ev"),
-                    CameraSettingOption("-1.0 EV", "-1.0ev"),
-                    CameraSettingOption("0.0 EV (Standart)", "0.0ev"),
-                    CameraSettingOption("+1.0 EV", "1.0ev"),
-                    CameraSettingOption("+2.0 EV", "2.0ev")
+                    CameraSettingOption("Kapalı", "off"),
+                    CameraSettingOption("Düşük Hassasiyet", "low"),
+                    CameraSettingOption("Orta Hassasiyet", "medium"),
+                    CameraSettingOption("Yüksek Hassasiyet", "high")
                 ),
-                currentWireValue = defaultEV
+                currentWireValue = defaultGSensor
+            ),
+            CameraSettingSpec(
+                key = "motion_det",
+                label = "Hareket Algılama (Deneysel)",
+                description = "Park modunda hareket algılama",
+                options = listOf(
+                    CameraSettingOption("Kapalı", "off"),
+                    CameraSettingOption("Açık", "on")
+                ),
+                currentWireValue = defaultMotionDet
+            ),
+            CameraSettingSpec(
+                key = "ldws",
+                label = "LDWS Şerit Takip (Deneysel)",
+                description = "Şerit terk uyarı sistemi",
+                options = listOf(
+                    CameraSettingOption("Kapalı", "off"),
+                    CameraSettingOption("Açık", "on")
+                ),
+                currentWireValue = defaultLdws
+            ),
+            CameraSettingSpec(
+                key = "fcws",
+                label = "FCWS Çarpışma Uyarısı (Deneysel)",
+                description = "Ön çarpışma uyarı sistemi",
+                options = listOf(
+                    CameraSettingOption("Kapalı", "off"),
+                    CameraSettingOption("Açık", "on")
+                ),
+                currentWireValue = defaultFcws
+            ),
+
+            // Görüntü
+            CameraSettingSpec(
+                key = "date_stamp",
+                label = "Tarih / Saat Damgası",
+                description = "Videolar üzerine tarih ve saat yazdırma",
+                options = listOf(
+                    CameraSettingOption("Açık", "ON"),
+                    CameraSettingOption("Kapalı", "OFF")
+                ),
+                currentWireValue = defaultDateStamp
             ),
             CameraSettingSpec(
                 key = "image rotate",
@@ -390,6 +474,18 @@ class SettingsViewModel(
                     CameraSettingOption("Ters (Döndürülmüş)", "REVERSE")
                 ),
                 currentWireValue = defaultRotate
+            ),
+
+            // Sistem
+            CameraSettingSpec(
+                key = "startup_record",
+                label = "Başlangıçta Otomatik Kayıt",
+                description = "Kamera 12V güç aldığında otomatik kayda başla",
+                options = listOf(
+                    CameraSettingOption("Açık", "ON"),
+                    CameraSettingOption("Kapalı", "OFF")
+                ),
+                currentWireValue = defaultStartupRec
             ),
             CameraSettingSpec(
                 key = "sys mode",
@@ -413,19 +509,9 @@ class SettingsViewModel(
                 currentWireValue = defaultLang
             ),
             CameraSettingSpec(
-                key = "microphone",
-                label = "Mikrofon",
-                description = "Araç içi ses kaydı",
-                options = listOf(
-                    CameraSettingOption("Açık", "on"),
-                    CameraSettingOption("Kapalı", "off")
-                ),
-                currentWireValue = defaultMic
-            ),
-            CameraSettingSpec(
                 key = "auto_power_off",
                 label = "Otomatik Kapanma",
-                description = "Bu ayarın yazma komutu ASUS kaynak kodunda güvenli şekilde doğrulanamadığı için uygulamadan değiştirilemez.",
+                description = "Salt okunur sistem koruma ayarı",
                 options = emptyList(),
                 isEditable = false,
                 currentWireValue = defaultAutoPowerOff
@@ -433,7 +519,7 @@ class SettingsViewModel(
             CameraSettingSpec(
                 key = "wifi_ssid",
                 label = "Wi-Fi Ağ Adı",
-                description = "Bu ayarın yazma komutu ASUS kaynak kodunda güvenli şekilde doğrulanamadığı için uygulamadan değiştirilemez.",
+                description = "Salt okunur sistem koruma ayarı",
                 options = emptyList(),
                 isEditable = false,
                 currentWireValue = defaultSsid

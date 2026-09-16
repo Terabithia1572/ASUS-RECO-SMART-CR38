@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Road Motif -->
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M34,84 L54,58 L74,84 Z" />
+    <path
+        android:fillColor="#06B6D4"
+        android:pathData="M53,68 h2 v10 h-2 z" />
+
+    <!-- Camera Outer Body Rim -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#06B6D4"
+        android:strokeWidth="3.5"
+        android:pathData="M54,54 m-26,0 a26,26 0 1,1 52,0 a26,26 0 1,1 -52,0" />
+
+    <!-- Outer Lens Ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:pathData="M54,54 m-18,0 a18,18 0 1,1 36,0 a18,18 0 1,1 -36,0" />
+
+    <!-- Inner Lens Aperture Core -->
+    <path
+        android:fillColor="#06B6D4"
+        android:pathData="M54,54 m-10,0 a10,10 0 1,1 20,0 a10,10 0 1,1 -20,0" />
+
+    <!-- Aperture Lens Reflection Dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,48 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0" />
+
+    <!-- Recording Indicator Dot -->
+    <path
+        android:fillColor="#EF4444"
+        android:pathData="M70,36 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0" />
+</vector>

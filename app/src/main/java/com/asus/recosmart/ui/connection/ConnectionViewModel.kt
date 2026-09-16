@@ -3,7 +3,9 @@ package com.asus.recosmart.ui.connection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.asus.recosmart.RecoSmartApp
+import com.asus.recosmart.data.preferences.UserPreferencesManager
 import com.asus.recosmart.domain.model.CameraStatus
+import com.asus.recosmart.domain.model.DeviceStatus
 import com.asus.recosmart.domain.model.SessionState
 import com.asus.recosmart.domain.repository.CameraRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,12 +14,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class ConnectionViewModel(
-    private val repository: CameraRepository = RecoSmartApp.instance.cameraRepository
+    private val repository: CameraRepository = RecoSmartApp.instance.cameraRepository,
+    private val preferencesManager: UserPreferencesManager = RecoSmartApp.instance.userPreferencesManager
 ) : ViewModel() {
 
     val sessionState: StateFlow<SessionState> = repository.sessionState
     val cameraStatus: StateFlow<CameraStatus> = repository.cameraStatus
     val isMockMode: StateFlow<Boolean> = repository.isMockMode
+
+    val isVehicleModeEnabled: StateFlow<Boolean> = preferencesManager.isVehicleModeEnabled
+    val autoStartRecordingIfIdle: StateFlow<Boolean> = preferencesManager.autoStartRecordingIfIdle
 
     private val _cameraIp = MutableStateFlow(CameraStatus.DEFAULT_CAMERA_IP)
     val cameraIp: StateFlow<String> = _cameraIp.asStateFlow()
@@ -38,7 +44,15 @@ class ConnectionViewModel(
 
     fun toggleMockMode(enabled: Boolean) {
         repository.toggleMockMode(enabled)
-        _statusMessage.value = if (enabled) "Switched to Mock Debug Mode" else "Switched to Physical Camera Mode"
+        _statusMessage.value = if (enabled) "Simülasyon Moduna Geçildi" else "Gerçek Kamera Moduna Geçildi"
+    }
+
+    fun setVehicleMode(enabled: Boolean) {
+        preferencesManager.setVehicleModeEnabled(enabled)
+    }
+
+    fun setAutoStartRecording(autoStart: Boolean) {
+        preferencesManager.setAutoStartRecordingIfIdle(autoStart)
     }
 
     fun connect() {
@@ -46,16 +60,38 @@ class ConnectionViewModel(
             _statusMessage.value = null
             val portInt = _commandPort.value.toIntOrNull() ?: CameraStatus.DEFAULT_COMMAND_PORT
             val result = repository.connect(_cameraIp.value, portInt)
-            if (result.isFailure) {
-                _statusMessage.value = "Connection failed: ${result.exceptionOrNull()?.localizedMessage}"
+            if (result.isSuccess) {
+                if (isVehicleModeEnabled.value) {
+                    executeVehicleModeAutomation()
+                }
+            } else {
+                _statusMessage.value = "Bağlantı hatası: ${result.exceptionOrNull()?.localizedMessage}"
             }
+        }
+    }
+
+    private suspend fun executeVehicleModeAutomation() {
+        val statusRes = repository.getAppStatus()
+        val deviceStatus = statusRes.getOrNull() ?: DeviceStatus.UNKNOWN
+        if (deviceStatus == DeviceStatus.RECORD || repository.cameraStatus.value.isRecording) {
+            _statusMessage.value = "Araç Modu: Kamera zaten kayıt yapıyor."
+        } else if ((deviceStatus == DeviceStatus.VF || deviceStatus == DeviceStatus.IDLE) && autoStartRecordingIfIdle.value) {
+            val recRes = repository.startRecording()
+            if (recRes.isSuccess) {
+                _statusMessage.value = "Araç Modu: Otomatik kayıt başlatıldı."
+            } else {
+                _statusMessage.value = "Araç Modu: Otomatik kayıt başlatılamadı."
+            }
+        } else {
+            _statusMessage.value = "Araç Modu: Oturum hazır (${deviceStatus.name})."
         }
     }
 
     fun disconnect() {
         viewModelScope.launch {
             repository.disconnect()
-            _statusMessage.value = "Disconnected"
+            _statusMessage.value = "Bağlantı Kesildi"
         }
     }
 }
+

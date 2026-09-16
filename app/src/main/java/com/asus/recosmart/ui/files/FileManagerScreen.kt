@@ -34,6 +34,7 @@ import com.asus.recosmart.domain.model.CameraFile
 import com.asus.recosmart.ui.theme.DarkBackground
 import com.asus.recosmart.ui.theme.PrimaryCyan
 import com.asus.recosmart.ui.theme.RecordRed
+import com.asus.recosmart.ui.theme.SuccessGreen
 
 @Composable
 fun FileManagerScreen(
@@ -222,6 +223,8 @@ fun FileRowItem(
     onShareClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    val isDownloadedOnPhone = exportProgress?.savedUri != null
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -292,13 +295,19 @@ fun FileRowItem(
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                 )
                             }
-                            if (exportProgress?.savedUri != null) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "İndirildi",
-                                    tint = PrimaryCyan,
-                                    modifier = Modifier.size(14.dp)
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Telefonda / Kamerada Badges
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (isDownloadedOnPhone) SuccessGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    text = if (isDownloadedOnPhone) "Telefonda" else "Kamerada",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDownloadedOnPhone) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                 )
                             }
                         }
@@ -370,4 +379,3 @@ fun FileRowItem(
         }
     }
 }
-

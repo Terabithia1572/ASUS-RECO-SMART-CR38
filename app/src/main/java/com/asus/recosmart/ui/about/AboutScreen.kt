@@ -57,7 +57,7 @@ fun AboutScreen() {
                 border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryCyan)
             ) {
                 Text(
-                    text = "Field Test RC6",
+                    text = "Field Test RC7",
                     color = PrimaryCyan,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -95,7 +95,7 @@ fun AboutScreen() {
                 )
 
                 Text(
-                    text = "Uygulama; kamera bağlantısı, canlı görüntü, video kaydı, fotoğraf çekimi, kamera kayıtlarının görüntülenmesi, cihazdan telefona medya aktarımı ve desteklenen kamera ayarlarının yönetilmesi gibi işlevler sunmaktadır.",
+                    text = "Uygulama; kamera bağlantısı, canlı görüntü, araç modu otomasyonu, video kaydı, fotoğraf çekimi, kamera kayıtlarının görüntülenmesi, cihazdan telefona medya aktarımı ve desteklenen kamera ayarlarının yönetilmesi gibi işlevler sunmaktadır.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
@@ -124,7 +124,7 @@ fun AboutScreen() {
                     Icon(Icons.Default.Person, contentDescription = null, tint = PrimaryCyan, modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Geliştirici",
+                        text = "Geliştirici & Lisans",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = PrimaryCyan
@@ -167,14 +167,14 @@ fun AboutScreen() {
                     Icon(Icons.Default.Code, contentDescription = null, tint = PrimaryCyan, modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Teknik Bilgiler",
+                        text = "Teknik Donanım Bilgileri",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = PrimaryCyan
                     )
                 }
 
-                TechInfoRow("Hedef Cihaz:", "ASUS RECO Smart CR38 / SanJet DR38AS")
+                TechInfoRow("Hedef Cihaz:", "SanJet DR38AS (ASUS RECO Smart CR38)")
                 TechInfoRow("Kamera IP:", "192.168.42.1")
                 TechInfoRow("Komut TCP Portu:", "7878")
                 TechInfoRow("Veri TCP Portu:", "8787")
@@ -206,7 +206,7 @@ fun AboutScreen() {
                 }
 
                 Text(
-                    text = "ASUS ve ilgili ürün adları/logoları ilgili hak sahiplerinin ticari markalarıdır. Bu uygulama bağımsız olarak geliştirilmiştir ve ASUS tarafından yayımlanan resmi uygulama olduğu iddiasında değildir.",
+                    text = "ASUS ve RECO Smart markaları ASUSTeK Computer Inc. tescilli markalarıdır. Bu uygulama bağımsız açık kaynaklı topluluk kontrol yazılımıdır.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 16.sp

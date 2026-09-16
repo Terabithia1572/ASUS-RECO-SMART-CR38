@@ -1,12 +1,17 @@
 package com.asus.recosmart.ui.connection
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.SignalWifi4Bar
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -15,7 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -25,12 +32,11 @@ import com.asus.recosmart.ui.theme.PrimaryCyan
 import com.asus.recosmart.ui.theme.RecordRed
 import com.asus.recosmart.ui.theme.SuccessGreen
 
-import androidx.compose.ui.text.style.TextOverflow
-
 @Composable
 fun ConnectionScreen(
     viewModel: ConnectionViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val sessionState by viewModel.sessionState.collectAsState()
     val cameraStatus by viewModel.cameraStatus.collectAsState()
     val isMockMode by viewModel.isMockMode.collectAsState()
@@ -38,10 +44,14 @@ fun ConnectionScreen(
     val commandPort by viewModel.commandPort.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
 
+    val isVehicleModeEnabled by viewModel.isVehicleModeEnabled.collectAsState()
+    val autoStartRecordingIfIdle by viewModel.autoStartRecordingIfIdle.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(DarkBackground)
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -80,7 +90,7 @@ fun ConnectionScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = "Field Test RC6",
+                                text = "Field Test RC7",
                                 color = PrimaryCyan,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -125,7 +135,45 @@ fun ConnectionScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        // Wi-Fi Connection Helper (Visible when disconnected and in Real Camera mode)
+        if (!isMockMode && !sessionState.isConnected) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = PrimaryCyan.copy(alpha = 0.10f)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryCyan.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryCyan, modifier = Modifier.size(32.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Wi-Fi Bağlantı Yardımcısı",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = PrimaryCyan
+                        )
+                        Text(
+                            text = "Telefonunuzu kameranın Wi-Fi ağına (CR38_...) bağlayın.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryCyan)
+                    ) {
+                        Text("Wi-Fi Ayarları", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
 
         // Connection Card
         Card(
@@ -232,7 +280,64 @@ fun ConnectionScreen(
             }
         }
 
-        // Status Card
+        // Vehicle Dashboard Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.DirectionsCar, contentDescription = null, tint = PrimaryCyan)
+                    Text(
+                        text = "Araç Gösterge Paneli",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = PrimaryCyan
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Araç Modu Otomasyonu", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("Kameraya bağlanıldığında durumu otomatik kontrol et", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isVehicleModeEnabled,
+                        onCheckedChange = { viewModel.setVehicleMode(it) }
+                    )
+                }
+
+                if (isVehicleModeEnabled) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Boştaysa Otomatik Kayıt", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Kamera kayıt yapmıyorsa bağlandığında otomatik kayıt başlat", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = autoStartRecordingIfIdle,
+                            onCheckedChange = { viewModel.setAutoStartRecording(it) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Status & Facts Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -243,20 +348,20 @@ fun ConnectionScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Oturum Bilgileri",
+                    text = "Donanım & Oturum Bilgileri",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = PrimaryCyan
                 )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Durum:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Bağlantı:", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         text = when (sessionState) {
-                            is SessionState.Connected -> if (isMockMode) "Simülasyon Aktif" else "Kamera Bağlandı"
+                            is SessionState.Connected -> if (isMockMode) "Simülasyon Aktif" else "Bağlı"
                             is SessionState.Connecting, is SessionState.SessionStarting -> "Oturum Başlatılıyor"
                             is SessionState.TcpConnected -> "TCP Bağlandı"
-                            is SessionState.Disconnected -> "Bağlantı Yok"
+                            is SessionState.Disconnected -> "Bağlı Değil"
                             is SessionState.Error -> "Bağlantı Hatası"
                         },
                         fontWeight = FontWeight.Bold,
@@ -269,11 +374,20 @@ fun ConnectionScreen(
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Kayıt Durumu:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = if (cameraStatus.isRecording) "Kayıt Yapıyor" else "Hazır",
+                        fontWeight = FontWeight.Bold,
+                        color = if (cameraStatus.isRecording) RecordRed else SuccessGreen
+                    )
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Aktif Token:", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         text = when (val state = sessionState) {
                             is SessionState.Connected -> "${state.token}"
-                            else -> "${cameraStatus.activeToken}"
+                            else -> if (cameraStatus.activeToken > 0) "${cameraStatus.activeToken}" else "Yok"
                         },
                         fontWeight = FontWeight.Bold
                     )
@@ -282,24 +396,23 @@ fun ConnectionScreen(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Kamera Modeli:", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        text = "${cameraStatus.brand} ${cameraStatus.model}",
+                        text = "SanJet DR38AS (ASUS RECO Smart)",
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                if (cameraStatus.firmwareVersion.isNotEmpty()) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Yazılım Versiyonu (FW):", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            text = cameraStatus.firmwareVersion,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Kamera IP:", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = cameraIp, fontWeight = FontWeight.Bold)
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Canlı RTSP Akışı:", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(text = cameraStatus.rtspUrl, fontSize = 12.sp, color = PrimaryCyan)
+                    Text(
+                        text = if (sessionState.isConnected) cameraStatus.rtspUrl else "Kapalı",
+                        fontSize = 12.sp,
+                        color = if (sessionState.isConnected) PrimaryCyan else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 val derivedStatusText = when (val state = sessionState) {

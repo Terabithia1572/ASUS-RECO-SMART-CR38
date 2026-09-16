@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
@@ -37,12 +38,17 @@ fun SettingsScreen(
     val isMockMode by viewModel.isMockMode.collectAsState()
 
     val isSettingMutationInProgress by viewModel.isSettingMutationInProgress.collectAsState()
-
     val canEdit = (isMockMode || sessionState is SessionState.Connected) && !isSettingMutationInProgress
 
     var selectedSpecForEdit by remember { mutableStateOf<CameraSettingSpec?>(null) }
     var showFormatConfirmDialog by remember { mutableStateOf(false) }
     var showResetConfirmDialog by remember { mutableStateOf(false) }
+
+    val videoKeys = listOf("video_resolution", "loop record", "microphone", "ev value")
+    val photoKeys = listOf("photo_size", "photo burst", "photo time lapse")
+    val securityKeys = listOf("gs sense", "motion_det", "ldws", "fcws")
+    val imageKeys = listOf("date_stamp", "image rotate")
+    val systemKeys = listOf("startup_record", "sys mode", "language", "auto_power_off", "wifi_ssid")
 
     Column(
         modifier = Modifier
@@ -143,23 +149,94 @@ fun SettingsScreen(
             }
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(settingSpecs) { spec ->
-                    SettingSpecCard(
-                        spec = spec,
-                        canEdit = canEdit,
-                        onClick = {
-                            if (canEdit && spec.isEditable && spec.options.isNotEmpty()) {
-                                selectedSpecForEdit = spec
-                            }
-                        }
-                    )
+                // Video Category
+                item {
+                    SettingsSectionHeader("Video Ayarları")
+                }
+                items(settingSpecs.filter { it.key in videoKeys }) { spec ->
+                    SettingSpecCard(spec = spec, canEdit = canEdit, onClick = { selectedSpecForEdit = spec })
+                }
+
+                // Photo Category
+                item {
+                    SettingsSectionHeader("Fotoğraf Ayarları")
+                }
+                items(settingSpecs.filter { it.key in photoKeys }) { spec ->
+                    SettingSpecCard(spec = spec, canEdit = canEdit, onClick = { selectedSpecForEdit = spec })
+                }
+
+                // Security Category
+                item {
+                    SettingsSectionHeader("Güvenlik ve Sürüş")
+                }
+                items(settingSpecs.filter { it.key in securityKeys }) { spec ->
+                    SettingSpecCard(spec = spec, canEdit = canEdit, onClick = { selectedSpecForEdit = spec })
+                }
+
+                // Image & Stamp Category
+                item {
+                    SettingsSectionHeader("Görüntü ve Tarih Damgası")
+                }
+                items(settingSpecs.filter { it.key in imageKeys }) { spec ->
+                    SettingSpecCard(spec = spec, canEdit = canEdit, onClick = { selectedSpecForEdit = spec })
+                }
+
+                // System & Maintenance Category
+                item {
+                    SettingsSectionHeader("Sistem ve Bakım")
+                }
+                items(settingSpecs.filter { it.key in systemKeys }) { spec ->
+                    SettingSpecCard(spec = spec, canEdit = canEdit, onClick = { selectedSpecForEdit = spec })
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Camera Clock Sync Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Kamera Saatini Telefonla Eşitle",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = PrimaryCyan
+                                )
+                                Text(
+                                    text = "Kameranın tarih/saat bilgisini telefon saatiyle günceller",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Button(
+                                onClick = { viewModel.syncCameraClock() },
+                                enabled = canEdit,
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryCyan),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Eşitle", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
                     // Maintenance & Safety Danger Card
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -171,7 +248,7 @@ fun SettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = "Bakım ve Güvenlik İşlemleri",
+                                text = "Kritik Bakım İşlemleri",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
                                 color = RecordRed
@@ -336,6 +413,17 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+@Composable
+fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        fontWeight = FontWeight.Bold,
+        fontSize = 14.sp,
+        color = PrimaryCyan,
+        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+    )
 }
 
 @Composable

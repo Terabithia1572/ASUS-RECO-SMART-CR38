@@ -1,5 +1,9 @@
 package com.asus.recosmart.ui.debug
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.asus.recosmart.RecoSmartApp
@@ -9,6 +13,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class DebugConsoleViewModel(
     private val repository: CameraRepository = RecoSmartApp.instance.cameraRepository
@@ -51,7 +58,6 @@ class DebugConsoleViewModel(
             var passed = 0
             val totalTests = 11
 
-            // Step 1: START_SESSION
             val sessionRes = repository.startSession()
             if (sessionRes.isSuccess && sessionRes.getOrNull() == 1001) {
                 passed++
@@ -60,7 +66,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 1/$totalTests] START_SESSION failed: ${sessionRes.exceptionOrNull()}")
             }
 
-            // Step 2: GET_ALL_CURRENT_SETTINGS
             val settingsRes = repository.fetchAllSettings()
             if (settingsRes.isSuccess) {
                 passed++
@@ -69,7 +74,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 2/$totalTests] GET_ALL_CURRENT_SETTINGS failed")
             }
 
-            // Step 3: RESET_TO_VF
             val vfRes = repository.prepareLiveView()
             if (vfRes.isSuccess) {
                 passed++
@@ -78,7 +82,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 3/$totalTests] RESET_TO_VF failed")
             }
 
-            // Step 4: GET_APP_STATUS
             val statusRes = repository.getAppStatus()
             if (statusRes.isSuccess) {
                 passed++
@@ -87,7 +90,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 4/$totalTests] GET_APP_STATUS failed")
             }
 
-            // Step 5: TAKE_PHOTO
             val photoRes = repository.takePhoto()
             if (photoRes.isSuccess) {
                 passed++
@@ -96,7 +98,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 5/$totalTests] TAKE_PHOTO failed")
             }
 
-            // Step 6: RECORD_START
             val recStartRes = repository.startRecording()
             if (recStartRes.isSuccess && repository.cameraStatus.value.isRecording) {
                 passed++
@@ -105,7 +106,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 6/$totalTests] RECORD_START failed")
             }
 
-            // Step 7: PHOTO_PIV
             val pivRes = repository.takePhotoPiv()
             if (pivRes.isSuccess) {
                 passed++
@@ -114,7 +114,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 7/$totalTests] PHOTO_PIV failed")
             }
 
-            // Step 8: RECORD_STOP
             val recStopRes = repository.stopRecording()
             if (recStopRes.isSuccess && !repository.cameraStatus.value.isRecording) {
                 passed++
@@ -123,7 +122,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 8/$totalTests] RECORD_STOP failed")
             }
 
-            // Step 9: LS
             val filesRes = repository.listFiles()
             if (filesRes.isSuccess) {
                 passed++
@@ -132,7 +130,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 9/$totalTests] LS failed")
             }
 
-            // Step 10: STOP_VF
             val stopVfRes = repository.stopLiveView()
             if (stopVfRes.isSuccess) {
                 passed++
@@ -141,7 +138,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[FAIL 10/$totalTests] STOP_VF failed")
             }
 
-            // Step 11: GET_DEVICE_INFORMATION
             val devInfoRes = repository.getDeviceInformation()
             if (devInfoRes.isSuccess) {
                 passed++
@@ -159,7 +155,7 @@ class DebugConsoleViewModel(
         viewModelScope.launch {
             repository.logRtsp("==================================================")
             repository.logRtsp("=== ASUS CR38 HARDWARE DIAGNOSTIC ===")
-            repository.logRtsp("Target: 192.168.42.1:7878 | Camera Model: ASUS RECO Smart CR38")
+            repository.logRtsp("Target: 192.168.42.1:7878 | Camera Model: SanJet DR38AS / ASUS RECO Smart CR38")
 
             if (repository.isMockMode.value) {
                 repository.logRtsp("[PROBE NOTICE] App is currently in MOCK MODE. Toggle to Real Camera mode in Connect tab to probe physical CR38 hardware.")
@@ -178,7 +174,6 @@ class DebugConsoleViewModel(
             var rtspPass = false
             var acquiredToken = 0
 
-            // Stage 0: Network Pre-flight
             repository.logRtsp("[PRE-FLIGHT] Checking Wi-Fi and 192.168.42.1 reachability...")
             val preflight = com.asus.recosmart.data.network.CameraNetworkManager.performNetworkPreflight()
             netPass = preflight.isWifiConnected || preflight.isHostReachable
@@ -189,21 +184,11 @@ class DebugConsoleViewModel(
 
             if (!tcpPass && !repository.isMockMode.value) {
                 repository.logRtsp("[STAGE FAIL] TCP 192.168.42.1:7878 unreachable. Skipping subsequent authenticated protocol stages.")
-                repository.logRtsp("[2] START_SESSION ............ SKIPPED")
-                repository.logRtsp("[3] Token acquisition ........ NONE")
-                repository.logRtsp("[4] Secondary socket 8787 .... SKIPPED")
-                repository.logRtsp("[5] DEVICE_INFORMATION ....... SKIPPED")
-                repository.logRtsp("[6] APP_STATUS ............... SKIPPED")
-                repository.logRtsp("[7] GET_SETTINGS ............. SKIPPED")
-                repository.logRtsp("[8] CD /tmp/fuse_d/DCIM ...... SKIPPED")
-                repository.logRtsp("[9] LS current directory ..... SKIPPED")
-                repository.logRtsp("[10] RTSP readiness .......... NOT TESTED")
                 repository.logRtsp("Overall: CONNECTION FAILED")
                 repository.logRtsp("==================================================")
                 return@launch
             }
 
-            // Stage 1: TCP Connect & START_SESSION
             repository.logRtsp("[STAGE 1] Opening TCP socket & sending START_SESSION (msg_id 257)...")
             val connRes = repository.connect("192.168.42.1", 7878)
             if (connRes.isSuccess) {
@@ -219,14 +204,6 @@ class DebugConsoleViewModel(
                 repository.logRtsp("[4] Secondary socket 8787 .... PASS")
             } else {
                 repository.logRtsp("[2] START_SESSION (257) ...... FAIL (${connRes.exceptionOrNull()?.localizedMessage})")
-                repository.logRtsp("[3] Token acquisition ........ NONE")
-                repository.logRtsp("[4] Secondary socket 8787 .... SKIPPED")
-                repository.logRtsp("[5] DEVICE_INFORMATION ....... SKIPPED")
-                repository.logRtsp("[6] APP_STATUS ............... SKIPPED")
-                repository.logRtsp("[7] GET_SETTINGS ............. SKIPPED")
-                repository.logRtsp("[8] CD /tmp/fuse_d/DCIM ...... SKIPPED")
-                repository.logRtsp("[9] LS current directory ..... SKIPPED")
-                repository.logRtsp("[10] RTSP readiness .......... NOT TESTED")
                 repository.logRtsp("Overall: CONNECTION FAILED")
                 repository.logRtsp("==================================================")
                 return@launch
@@ -234,7 +211,6 @@ class DebugConsoleViewModel(
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 5: GET_DEVICE_INFORMATION (msg_id 11)
             repository.logRtsp("[STAGE 5] Querying GET_DEVICE_INFORMATION (msg_id 11)...")
             val devInfoRes = repository.getDeviceInformation()
             devInfoPass = devInfoRes.isSuccess
@@ -242,7 +218,6 @@ class DebugConsoleViewModel(
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 6: GET_SETTING app_status (msg_id 1)
             repository.logRtsp("[STAGE 6] Querying GET_SETTING app_status (msg_id 1)...")
             val statusRes = repository.getAppStatus()
             appStatusPass = statusRes.isSuccess
@@ -250,7 +225,6 @@ class DebugConsoleViewModel(
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 7: GET_ALL_CURRENT_SETTINGS (msg_id 3)
             repository.logRtsp("[STAGE 7] Querying GET_ALL_CURRENT_SETTINGS (msg_id 3)...")
             val settingsRes = repository.fetchAllSettings()
             settingsPass = settingsRes.isSuccess
@@ -258,7 +232,6 @@ class DebugConsoleViewModel(
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 8 & 9: Hierarchical Filesystem Scan (CD /tmp/fuse_d/DCIM -> LS)
             repository.logRtsp("[STAGE 8 & 9] Executing hierarchical CD /tmp/fuse_d/DCIM -> MEDIA subfolders scan...")
             val filesRes = repository.listFiles("/tmp/fuse_d/DCIM/")
             if (filesRes.isSuccess) {
@@ -285,7 +258,6 @@ class DebugConsoleViewModel(
 
             kotlinx.coroutines.delay(350)
 
-            // Stage 10: RTSP readiness / probe
             repository.logRtsp("[STAGE 10] Probing viewfinder initialization & RTSP readiness...")
             val vfPrepRes = repository.prepareLiveView()
             val vfSuccess = vfPrepRes.isSuccess
@@ -298,7 +270,7 @@ class DebugConsoleViewModel(
 
             val rtspStageResult = when {
                 vfSuccess && rtspSocketOpen && firstFrameRendered -> "PASS"
-                vfSuccess && rtspSocketOpen -> "PARTIAL (RTSP URL & Socket READY, first frame pending player view)"
+                vfSuccess && rtspSocketOpen -> "PARTIAL (RTSP URL & Socket READY)"
                 else -> "FAIL (${vfPrepRes.exceptionOrNull()?.localizedMessage ?: "RTSP stream unavailable"})"
             }
             rtspPass = vfSuccess && rtspSocketOpen && firstFrameRendered
@@ -314,32 +286,64 @@ class DebugConsoleViewModel(
         repository.clearDebugLogs()
     }
 
-    fun copyLogsToClipboard(context: android.content.Context) {
-        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
-        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())
-        val modeStr = if (isMockMode.value) "MOCK_SIMULATOR" else "REAL_CAMERA"
+    fun copyLogsToClipboard(context: Context) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val modeStr = if (isMockMode.value) "SİMÜLASYON" else "GERÇEK KAMERA"
         val session = repository.sessionState.value
         val token = cameraStatus.value.activeToken
         val ip = cameraStatus.value.cameraIp
-        val port = cameraStatus.value.commandPort
 
         val header = """
             === ASUS RECO SMART CR38 PROTOCOL LOG EXPORT ===
             Export Timestamp: $timestamp
-            App Version: 1.0.0 (Phase I Build)
-            Android OS: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})
-            Device Model: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}
+            App Version: Field Test RC7
+            Android API: ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})
+            Device Model: ${Build.MANUFACTURER.uppercase()} ${Build.MODEL}
             Connection Mode: $modeStr
             Target Camera IP: $ip
-            Command TCP Port: $port
             Active Session Token: $token
             Session State: $session
             ==================================================
         """.trimIndent()
 
         val fullExportText = "$header\n\n" + debugLogs.value.joinToString("\n")
-        val clip = android.content.ClipData.newPlainText("ASUS CR38 Protocol Logs", fullExportText)
+        val clip = ClipData.newPlainText("ASUS CR38 Protocol Logs", fullExportText)
         clipboard.setPrimaryClip(clip)
-        repository.logRtsp("[SYSTEM] Full protocol diagnostic report copied to Android clipboard (${debugLogs.value.size} entries)")
+        repository.logRtsp("[SYSTEM] Protocol logs copied to clipboard (${debugLogs.value.size} entries)")
+    }
+
+    fun copySanitizedReportToClipboard(context: Context) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val modeStr = if (isMockMode.value) "SİMÜLASYON" else "GERÇEK KAMERA"
+        val session = repository.sessionState.value
+        val token = cameraStatus.value.activeToken
+        val ip = cameraStatus.value.cameraIp
+
+        val sanitizedLogs = debugLogs.value.map { line ->
+            line.replace(Regex("([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})"), "[REDACTED_MAC]")
+        }
+
+        val header = """
+            ==================================================
+            ASUS RECO SMART CR38 TANILAMA VE PROTOKOL RAPORU
+            ==================================================
+            Rapor Zamanı: $timestamp
+            Uygulama Sürümü: Field Test RC7
+            Android API: ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})
+            Cihaz Modeli: ${Build.MANUFACTURER.uppercase()} ${Build.MODEL}
+            Bağlantı Modu: $modeStr
+            Hedef Kamera IP: $ip
+            Aktif Token: $token
+            Oturum Durumu: $session
+            ==================================================
+        """.trimIndent()
+
+        val fullExportText = "$header\n\nLOG KAYITLARI:\n" + sanitizedLogs.joinToString("\n")
+        val clip = ClipData.newPlainText("ASUS CR38 Tanılama Raporu", fullExportText)
+        clipboard.setPrimaryClip(clip)
+        repository.logRtsp("[SYSTEM] Arındırılmış tanılama raporu panoya kopyalandı (${sanitizedLogs.size} satır)")
     }
 }
+

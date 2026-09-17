@@ -12,8 +12,11 @@ data class CameraFile(
     val fullCameraPath: String
         get() = remotePath
 
+    val remoteIdentity: String
+        get() = "$folder/$filename"
+
     val httpUrl: String
-        get() = "http://${CameraStatus.DEFAULT_CAMERA_IP}/DCIM/${folder}/${filename}"
+        get() = CameraMediaUrlResolver.resolve(folder, filename)
 
     val isVideo: Boolean
         get() = filename.endsWith(".MP4", ignoreCase = true) || filename.endsWith(".MOV", ignoreCase = true)

@@ -42,28 +42,37 @@ import java.util.Locale
 @Composable
 fun InternalMediaPlayerDialog(
     file: CameraFile,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRefresh: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    var retryCount by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        CameraNetworkManager.bindProcessToWifi(context)
+    val resolvedUrl = remember(file.folder, file.filename, retryCount) {
+        com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
     }
 
-    val exoPlayer = remember(file.httpUrl) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(file.httpUrl))
-            prepare()
-            playWhenReady = true
-        }
-    }
-
-    var isPlaying by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(false) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var actionStatusText by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableIntStateOf(-1) }
+    var hasError by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(resolvedUrl) {
+        CameraNetworkManager.bindProcessToWifi(context)
+        android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("VIDEO_PLAYBACK", file, resolvedUrl))
+    }
+
+    val exoPlayer = remember(resolvedUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(resolvedUrl))
+            prepare()
+            playWhenReady = true
+        }
+    }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -72,8 +81,15 @@ fun InternalMediaPlayerDialog(
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
+                    hasError = false
                     durationMs = exoPlayer.duration.coerceAtLeast(0L)
+                    android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("VIDEO_PLAYBACK", file, resolvedUrl, 200))
                 }
+            }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                hasError = true
+                errorMessage = "Dosya kamera listesinde görünüyor ancak HTTP üzerinden erişilemiyor."
+                android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("VIDEO_PLAYBACK", file, resolvedUrl, 404))
             }
         }
         exoPlayer.addListener(listener)
@@ -134,7 +150,7 @@ fun InternalMediaPlayerDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // ExoPlayer Surface
+                // ExoPlayer Surface / Error State Container
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -142,15 +158,74 @@ fun InternalMediaPlayerDialog(
                         .background(Color.Black, shape = RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                player = exoPlayer
-                                useController = false
+                    if (hasError) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = null,
+                                tint = com.asus.recosmart.ui.theme.RecordRed,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = errorMessage ?: "Dosya kamera listesinde görünüyor ancak HTTP üzerinden erişilemiyor.",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${file.filename} (${file.folder})",
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        hasError = false
+                                        retryCount++
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryCyan)
+                                ) {
+                                    Text("Yeniden Dene", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (onRefresh != null) {
+                                    Button(
+                                        onClick = {
+                                            onRefresh()
+                                            hasError = false
+                                            retryCount++
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryCyan)
+                                    ) {
+                                        Text("Yenile", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DarkBackground)
+                                    }
+                                }
                             }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                        }
+                    } else {
+                        AndroidView(
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    player = exoPlayer
+                                    useController = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

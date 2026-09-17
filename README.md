@@ -15,11 +15,20 @@ Orijinal mobil uygulamanın eski Android sürümlerine bağımlılığını orta
 
 ---
 
-## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2)
+## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2 Baseline & RC7.3 Updates)
 
-Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.**
+Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.** Field Test RC7.3, medya HTTP erişim hatası tanılamalarını ve yenileme kullanıcı deneyimini ekler.
 
-### Donanım Üzerinde Fiziksel Olarak Doğrulanan İşlevler:
+### Field Test RC7.3 ile Eklenen Özellikler:
+
+- 🔄 **Merkezi Medya HTTP URL Çözümleyici (`CameraMediaUrlResolver`)**: Klasör ve dosya isimlerinin orijinal büyük/küçük harf durumunu tam koruyarak ve URL kodlama güvenliğini sağlayarak tek bir merkezden HTTP URL üretimi.
+- 🔄 **Ham HTTP Tanılama Günlükleri**: Fotoğraf önizleme, video oynatma, indirme, önbelleğe alma ve paylaşım işlemlerinde `[MEDIA]` etiketi ile URL ve HTTP durum kodu tanılaması.
+- 🔄 **Gelişmiş HTTP 404 Hata Yönetimi**: Medya dosyasına HTTP üzerinden erişilemediğinde (404 Not Found vb.) siyah ekran veya 00:00 oynatıcı yerine açıklayıcı hata kartı, `[Yeniden Dene]` ve `[Yenile]` butonları.
+- 🔄 **Manuel ve Pull-to-Refresh Yenileme**: Kayıtlar ekranında yenileme butonu ve yerel Compose Pull-to-Refresh desteği.
+- 🔄 **Kayıt Esnasında Güvenli Yenileme**: Medya listesi yenilenirken kameraya asla `RECORD_STOP`, `STOP_VF` veya `RESET_TO_VF` komutları gönderilmez; aktif kayıt kesintisiz devam eder.
+- 🔄 **Stabil Medya Kimliği ve Tekilleştirme**: Klasör + dosya adı kombinasyonu ile tekil medya kimliği (`remoteIdentity`) oluşturularak yinelenen kayıtlara izin verilmez.
+
+### Donanım Üzerinde Fiziksel Olarak Doğrulanan İşlevler (RC7.2):
 
 - ✅ **CR38 Wi-Fi Bağlantısı ve Soket İletişimi**: `192.168.42.1:7878` TCP komut portu üzerinden tam uyumlu haberleşme.
 - ✅ **Oturum Yönetimi**: `START_SESSION` ve dinamik oturum tokenı edinimi.
@@ -209,11 +218,20 @@ Built from scratch using modern Android architecture (**Kotlin**, **Jetpack Comp
 
 ---
 
-## 🎯 Hardware Physical Verification Status (Field Test RC7.2)
+## 🎯 Hardware Physical Verification Status (Field Test RC7.2 Baseline & RC7.3 Updates)
 
-Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.**
+Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.** Field Test RC7.3 adds media HTTP path resolution diagnostics and robust refresh UX.
 
-### Physically Verified Features on Hardware:
+### Added Features in Field Test RC7.3:
+
+- 🔄 **Centralized Media HTTP URL Resolver (`CameraMediaUrlResolver`)**: Centralized HTTP URL resolution guaranteeing exact case preservation for folder and filename, with safe URL encoding.
+- 🔄 **Raw HTTP Diagnostics Logging**: Diagnostic logs prefixed with `[MEDIA]` capturing URL and HTTP status code during photo preview, video playback, download, caching, and sharing.
+- 🔄 **Enhanced HTTP 404 Error Handling**: Structured error state card with `[Retry]` and `[Refresh]` buttons instead of a blank/black player or 00:00 duration when HTTP media is unavailable (404 Not Found).
+- 🔄 **Manual & Native Pull-to-Refresh**: Refresh button on Camera Records and native Compose Pull-to-Refresh support.
+- 🔄 **Recording-Safe Media Refresh**: Enumerating files never sends `RECORD_STOP`, `STOP_VF`, or `RESET_TO_VF`; active camera recording remains completely uninterrupted.
+- 🔄 **Stable File Identity & Deduplication**: Unique identity via folder + filename (`remoteIdentity`) preventing file duplication across folder listings.
+
+### Physically Verified Features on Hardware (RC7.2):
 
 - ✅ **CR38 Connection & Socket Setup**: Fully compatible communication over `192.168.42.1:7878` TCP command port.
 - ✅ **Session Management**: `START_SESSION` and dynamic session token acquisition.

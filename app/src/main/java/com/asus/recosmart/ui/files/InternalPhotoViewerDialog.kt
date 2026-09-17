@@ -41,7 +41,8 @@ import java.util.Locale
 @Composable
 fun InternalPhotoViewerDialog(
     file: CameraFile,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRefresh: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -51,14 +52,40 @@ fun InternalPhotoViewerDialog(
     var actionStatusText by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableIntStateOf(-1) }
     var extractedDimensions by remember { mutableStateOf<String?>(null) }
+    var retryCount by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(file.httpUrl) {
+    LaunchedEffect(file.httpUrl, retryCount) {
+        isLoading = true
+        errorMessage = null
         CameraNetworkManager.bindProcessToWifi(context)
         withContext(Dispatchers.IO) {
+            val resolvedUrl = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
+            android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("PHOTO_PREVIEW", file, resolvedUrl))
+
             try {
-                // Step 1: Decode bounds first without full memory allocation (inJustDecodeBounds)
+                // Step 1: Check HTTP connection and status
+                val connCheck = URL(resolvedUrl).openConnection() as HttpURLConnection
+                connCheck.connectTimeout = 5000
+                connCheck.readTimeout = 5000
+                connCheck.doInput = true
+                connCheck.connect()
+                val statusCode = connCheck.responseCode
+                android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("PHOTO_PREVIEW", file, resolvedUrl, statusCode))
+
+                if (statusCode != HttpURLConnection.HTTP_OK) {
+                    connCheck.disconnect()
+                    errorMessage = if (statusCode == HttpURLConnection.HTTP_NOT_FOUND) {
+                        "Dosya kamera listesinde görünüyor ancak HTTP üzerinden erişilemiyor."
+                    } else {
+                        "HTTP $statusCode: ${connCheck.responseMessage}"
+                    }
+                    return@withContext
+                }
+                connCheck.disconnect()
+
+                // Step 2: Decode bounds first without full memory allocation (inJustDecodeBounds)
                 val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                val connBounds = URL(file.httpUrl).openConnection() as HttpURLConnection
+                val connBounds = URL(resolvedUrl).openConnection() as HttpURLConnection
                 connBounds.connectTimeout = 5000
                 connBounds.readTimeout = 5000
                 connBounds.doInput = true
@@ -75,8 +102,8 @@ fun InternalPhotoViewerDialog(
                     extractedDimensions = "Gerçek dosya çözünürlüğü: ${width} × ${height} (~${String.format(Locale.US, "%.1f", mp)} MP)"
                 }
 
-                // Step 2: Download stream for full bitmap display
-                val conn = URL(file.httpUrl).openConnection() as HttpURLConnection
+                // Step 3: Download stream for full bitmap display
+                val conn = URL(resolvedUrl).openConnection() as HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
                 conn.doInput = true
@@ -93,10 +120,10 @@ fun InternalPhotoViewerDialog(
                         extractedDimensions = "Gerçek dosya çözünürlüğü: ${bitmap.width} × ${bitmap.height} (~${String.format(Locale.US, "%.1f", mp)} MP)"
                     }
                 } else {
-                    errorMessage = "Fotoğraf çözümlenemedi."
+                    errorMessage = "Dosya kamera listesinde görünüyor ancak HTTP üzerinden erişilemiyor."
                 }
             } catch (e: Exception) {
-                errorMessage = "Fotoğraf yüklenemedi: ${e.localizedMessage}"
+                errorMessage = "Dosya kamera listesinde görünüyor ancak HTTP üzerinden erişilemiyor."
             } finally {
                 isLoading = false
             }
@@ -193,11 +220,58 @@ fun InternalPhotoViewerDialog(
                             }
                         }
                         errorMessage != null -> {
-                            Text(
-                                text = errorMessage!!,
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 13.sp
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = com.asus.recosmart.ui.theme.RecordRed,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = errorMessage!!,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "${file.filename} (${file.folder})",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { retryCount++ },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryCyan)
+                                    ) {
+                                        Text("Yeniden Dene", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    if (onRefresh != null) {
+                                        Button(
+                                            onClick = {
+                                                onRefresh()
+                                                retryCount++
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryCyan)
+                                        ) {
+                                            Text("Yenile", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DarkBackground)
+                                        }
+                                    }
+                                }
+                            }
                         }
                         bitmapState != null -> {
                             Image(

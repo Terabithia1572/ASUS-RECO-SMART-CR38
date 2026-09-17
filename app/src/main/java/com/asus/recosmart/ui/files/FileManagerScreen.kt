@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import com.asus.recosmart.ui.theme.PrimaryCyan
 import com.asus.recosmart.ui.theme.RecordRed
 import com.asus.recosmart.ui.theme.SuccessGreen
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileManagerScreen(
     viewModel: FileManagerViewModel = viewModel()
@@ -56,6 +58,7 @@ fun FileManagerScreen(
     val sortMode by viewModel.sortMode.collectAsState()
 
     val isLoading by viewModel.isLoading.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
     val exportProgressMap by viewModel.exportProgressMap.collectAsState()
 
@@ -132,8 +135,19 @@ fun FileManagerScreen(
                     }
                 }
 
-                IconButton(onClick = { viewModel.loadFiles() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Yenile", tint = PrimaryCyan)
+                IconButton(
+                    onClick = { viewModel.refreshFiles() },
+                    enabled = !isRefreshing
+                ) {
+                    if (isRefreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = PrimaryCyan,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = "Yenile", tint = PrimaryCyan)
+                    }
                 }
             }
         }
@@ -251,52 +265,58 @@ fun FileManagerScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = PrimaryCyan)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Kamera dizinleri taranıyor...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refreshFiles() },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            if (isLoading && !isRefreshing) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = PrimaryCyan)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Kamera dizinleri taranıyor...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    }
                 }
-            }
-        } else if (files.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Görüntülenecek kayıt bulunamadı.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(files, key = { it.filename }) { file ->
-                    val exportProgress = exportProgressMap[file.filename]
-                    FileRowItem(
-                        file = file,
-                        exportProgress = exportProgress,
-                        onPlayClick = {
-                            if (file.isVideo) {
-                                fileToPlay = file
-                            } else if (file.isPhoto) {
-                                fileToViewPhoto = file
-                            }
-                        },
-                        onDownloadClick = {
-                            viewModel.downloadToPhone(context, file)
-                        },
-                        onOpenExternalClick = {
-                            viewModel.openInExternalApp(context, file)
-                        },
-                        onShareClick = {
-                            viewModel.shareMedia(context, file)
-                        },
-                        onDeleteClick = { fileToDelete = file }
-                    )
+            } else if (files.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Görüntülenecek kayıt bulunamadı.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(files, key = { "${it.folder}/${it.filename}" }) { file ->
+                        val exportProgress = exportProgressMap[file.filename]
+                        FileRowItem(
+                            file = file,
+                            exportProgress = exportProgress,
+                            onPlayClick = {
+                                if (file.isVideo) {
+                                    fileToPlay = file
+                                } else if (file.isPhoto) {
+                                    fileToViewPhoto = file
+                                }
+                            },
+                            onDownloadClick = {
+                                viewModel.downloadToPhone(context, file)
+                            },
+                            onOpenExternalClick = {
+                                viewModel.openInExternalApp(context, file)
+                            },
+                            onShareClick = {
+                                viewModel.shareMedia(context, file)
+                            },
+                            onDeleteClick = { fileToDelete = file }
+                        )
+                    }
                 }
             }
         }
@@ -332,7 +352,8 @@ fun FileManagerScreen(
         fileToPlay?.let { targetVideo ->
             InternalMediaPlayerDialog(
                 file = targetVideo,
-                onDismiss = { fileToPlay = null }
+                onDismiss = { fileToPlay = null },
+                onRefresh = { viewModel.refreshFiles() }
             )
         }
 
@@ -340,7 +361,8 @@ fun FileManagerScreen(
         fileToViewPhoto?.let { targetPhoto ->
             InternalPhotoViewerDialog(
                 file = targetPhoto,
-                onDismiss = { fileToViewPhoto = null }
+                onDismiss = { fileToViewPhoto = null },
+                onRefresh = { viewModel.refreshFiles() }
             )
         }
     }

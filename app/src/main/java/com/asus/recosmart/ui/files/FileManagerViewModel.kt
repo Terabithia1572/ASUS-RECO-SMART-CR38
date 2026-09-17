@@ -81,6 +81,9 @@ class FileManagerViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
@@ -114,20 +117,35 @@ class FileManagerViewModel(
     }
 
     fun loadFiles() {
+        refreshFiles()
+    }
+
+    fun refreshFiles() {
+        if (_isRefreshing.value) return
+
         viewModelScope.launch {
+            _isRefreshing.value = true
             _isLoading.value = true
-            _statusMessage.value = "Kamera dizinleri taranıyor..."
+            _statusMessage.value = "Kamera dizinleri yenileniyor..."
+
             val result = repository.listFiles(CameraStatus.DEFAULT_DCIM_PATH)
             if (result.isSuccess) {
-                val list = result.getOrDefault(emptyList())
-                _rawFiles.value = list
-                _availableFolders.value = list.map { it.folder }.distinct().sorted()
+                val fetchedList = result.getOrDefault(emptyList())
+
+                // Deduplicate using folder + filename as stable remote identity
+                val deduplicatedList = fetchedList.distinctBy { it.remoteIdentity }
+
+                _rawFiles.value = deduplicatedList
+                _availableFolders.value = deduplicatedList.map { it.folder }.distinct().sorted()
+
                 applyFilterPipeline()
-                updateStatusSummary()
+                _statusMessage.value = "Kayıtlar yenilendi • ${deduplicatedList.size} dosya"
             } else {
-                _statusMessage.value = "DCIM dizinleri okunamadı: ${result.exceptionOrNull()?.localizedMessage}"
+                _statusMessage.value = "Yenileme başarısız: ${result.exceptionOrNull()?.localizedMessage}"
             }
+
             _isLoading.value = false
+            _isRefreshing.value = false
         }
     }
 

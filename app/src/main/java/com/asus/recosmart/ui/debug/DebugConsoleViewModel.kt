@@ -297,7 +297,7 @@ class DebugConsoleViewModel(
         val header = """
             === ASUS RECO SMART CR38 PROTOCOL LOG EXPORT ===
             Export Timestamp: $timestamp
-            App Version: Field Test RC7.2
+            App Version: Field Test RC7.3
             Android API: ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})
             Device Model: ${Build.MANUFACTURER.uppercase()} ${Build.MODEL}
             Connection Mode: $modeStr
@@ -330,7 +330,7 @@ class DebugConsoleViewModel(
             ASUS RECO SMART CR38 TANILAMA VE PROTOKOL RAPORU
             ==================================================
             Rapor Zamanı: $timestamp
-            Uygulama Sürümü: Field Test RC7.2
+            Uygulama Sürümü: Field Test RC7.3
             Android API: ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})
             Cihaz Modeli: ${Build.MANUFACTURER.uppercase()} ${Build.MODEL}
             Bağlantı Modu: $modeStr

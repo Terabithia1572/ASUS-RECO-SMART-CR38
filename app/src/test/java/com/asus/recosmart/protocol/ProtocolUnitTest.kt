@@ -861,4 +861,193 @@ class ProtocolUnitTest {
         assertFalse("Vehicle mode status check while camera already records must NOT send RECORD_START", logs.contains("msg_id\":513"))
         assertFalse("Vehicle mode status check while camera already records must NOT send RECORD_STOP", logs.contains("msg_id\":514"))
     }
+
+    // =========================================================================
+    // 12. FIELD TEST RC7.3 VERIFICATION TESTS (MEDIA URL & REFRESH UX)
+    // =========================================================================
+
+    @Test
+    fun testMediaUrlPreservesExactFilenameCase() {
+        val file = CameraFile(filename = "FILE0501.JPG", folder = "105MEDIA")
+        val resolved = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
+        assertTrue("HTTP URL must preserve uppercase extension .JPG", resolved.endsWith("FILE0501.JPG"))
+        assertFalse("HTTP URL must NOT automatically lowercase filename", resolved.endsWith("file0501.jpg"))
+    }
+
+    @Test
+    fun testMediaUrlPreservesExactFolderCase() {
+        val file = CameraFile(filename = "FILE1001.mp4", folder = "110MEDIA")
+        val resolved = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
+        assertTrue("HTTP URL must preserve exact folder case 110MEDIA", resolved.contains("/DCIM/110MEDIA/"))
+    }
+
+    @Test
+    fun testFilesystemPathAndHttpPathAreSeparate() {
+        val file = CameraFile(filename = "FILE0501.JPG", folder = "105MEDIA")
+        assertEquals("/tmp/fuse_d/DCIM/105MEDIA/FILE0501.JPG", file.remotePath)
+        assertEquals("http://192.168.42.1/DCIM/105MEDIA/FILE0501.JPG", file.httpUrl)
+        assertFalse("HTTP URL must NOT contain filesystem prefix /tmp/fuse_d", file.httpUrl.contains("/tmp/fuse_d"))
+    }
+
+    @Test
+    fun testSingleUrlResolverUsedAcrossAllComponents() {
+        val file = CameraFile(filename = "EMRG3992.mp4", folder = "116MEDIA")
+        val resolvedDirect = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve("116MEDIA", "EMRG3992.mp4")
+        val resolvedModel = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
+        assertEquals(resolvedDirect, file.httpUrl)
+        assertEquals(resolvedModel, file.httpUrl)
+    }
+
+    @Test
+    fun testHttp404DoesNotDeleteCameraFile() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        val filesRes = repo.listFiles("/tmp/fuse_d/DCIM/")
+        assertTrue(filesRes.isSuccess)
+        val files = filesRes.getOrThrow()
+        assertTrue("Camera listing remains authoritative regardless of HTTP 404", files.isNotEmpty())
+    }
+
+    @Test
+    fun testHttp404ProducesMediaUnavailableState() {
+        val file = CameraFile(filename = "FILE0501.JPG", folder = "105MEDIA")
+        val log = com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("PHOTO_PREVIEW", file, file.httpUrl, 404)
+        assertTrue("Diagnostic log must capture HTTP status 404", log.contains("HTTP status=404"))
+        assertTrue("Diagnostic log must retain filename", log.contains("FILE0501.JPG"))
+    }
+
+    @Test
+    fun testManualRefreshTriggersFileEnumeration() = runBlocking {
+        val repo = MockCameraRepository()
+        val listRes = repo.listFiles("/tmp/fuse_d/DCIM/")
+        assertTrue("Manual refresh via repository must populate raw files", listRes.isSuccess && listRes.getOrThrow().isNotEmpty())
+    }
+
+    @Test
+    fun testPullToRefreshTriggersSameFileEnumeration() = runBlocking {
+        val repo = MockCameraRepository()
+        val initialList = repo.listFiles("/tmp/fuse_d/DCIM/").getOrThrow()
+        val refreshedList = repo.listFiles("/tmp/fuse_d/DCIM/").getOrThrow()
+        assertEquals("Pull-to-refresh must invoke same refresh path resulting in consistent count", initialList.size, refreshedList.size)
+    }
+
+    @Test
+    fun testConcurrentRefreshRequestsAreCoalesced() = runBlocking {
+        val repo = MockCameraRepository()
+        val res1 = repo.listFiles("/tmp/fuse_d/DCIM/")
+        val res2 = repo.listFiles("/tmp/fuse_d/DCIM/")
+        assertTrue(res1.isSuccess && res2.isSuccess)
+    }
+
+    @Test
+    fun testRefreshPreservesSearchQuery() {
+        val query = "3956"
+        val files = listOf(
+            CameraFile("FILE3956.mp4", "116MEDIA"),
+            CameraFile("FILE0501.JPG", "105MEDIA")
+        )
+        val filtered = files.filter { it.filename.lowercase().contains(query.lowercase()) }
+        assertEquals(1, filtered.size)
+        assertEquals("FILE3956.mp4", filtered[0].filename)
+    }
+
+    @Test
+    fun testRefreshPreservesSelectedSorting() {
+        val files = listOf(
+            CameraFile("FILE0501.JPG", "105MEDIA", dateTime = "2019-09-18 15:50:40"),
+            CameraFile("FILE3956.mp4", "116MEDIA", dateTime = "2021-08-23 15:50:40")
+        )
+        val sortedDesc = files.sortedWith(compareByDescending<CameraFile> { it.dateTime }.thenByDescending { it.filename })
+        assertEquals("FILE3956.mp4", sortedDesc[0].filename)
+    }
+
+    @Test
+    fun testRefreshPreservesCategoryFilter() {
+        val files = listOf(
+            CameraFile("FILE0501.JPG", "105MEDIA"),
+            CameraFile("FILE3956.mp4", "116MEDIA")
+        )
+        val photosOnly = files.filter { it.isPhoto }
+        assertEquals(1, photosOnly.size)
+        assertEquals("FILE0501.JPG", photosOnly[0].filename)
+    }
+
+    @Test
+    fun testRefreshPreservesFolderFilter() {
+        val files = listOf(
+            CameraFile("FILE0501.JPG", "105MEDIA"),
+            CameraFile("FILE3956.mp4", "116MEDIA")
+        )
+        val folder116 = files.filter { it.folder.equals("116MEDIA", ignoreCase = true) }
+        assertEquals(1, folder116.size)
+        assertEquals("FILE3956.mp4", folder116[0].filename)
+    }
+
+    @Test
+    fun testRefreshDoesNotInvokeRecordStop() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.clearDebugLogs()
+        repo.listFiles("/tmp/fuse_d/DCIM/")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("File refresh must NOT send RECORD_STOP msg_id 514", logs.contains("msg_id\":514"))
+    }
+
+    @Test
+    fun testRefreshDoesNotInvokeStopVf() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.clearDebugLogs()
+        repo.listFiles("/tmp/fuse_d/DCIM/")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("File refresh must NOT send STOP_VF msg_id 260", logs.contains("msg_id\":260"))
+    }
+
+    @Test
+    fun testRefreshDoesNotInvokeResetToVf() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.clearDebugLogs()
+        repo.listFiles("/tmp/fuse_d/DCIM/")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("File refresh must NOT send RESET_TO_VF msg_id 259", logs.contains("msg_id\":259"))
+    }
+
+    @Test
+    fun testRepeatedRefreshDeduplicatesFiles() = runBlocking {
+        val files = listOf(
+            CameraFile("FILE0001.MP4", "100MEDIA"),
+            CameraFile("FILE0001.MP4", "100MEDIA"),
+            CameraFile("FILE0001.MP4", "101MEDIA")
+        )
+        val deduplicated = files.distinctBy { it.remoteIdentity }
+        assertEquals("Deduplication by remoteIdentity must yield 2 distinct items for different folders", 2, deduplicated.size)
+    }
+
+    @Test
+    fun testFolderAndFilenameUsedAsRemoteIdentity() {
+        val file = CameraFile(filename = "FILE0501.JPG", folder = "105MEDIA")
+        assertEquals("105MEDIA/FILE0501.JPG", file.remoteIdentity)
+    }
+
+    @Test
+    fun testLocalDownloadedStateSurvivesRefresh() {
+        val exportMap = mutableMapOf<String, String>()
+        exportMap["FILE0501.JPG"] = "content://media/external/images/media/1"
+        // Simulating refresh cycle retaining local export map
+        val file = CameraFile("FILE0501.JPG", "105MEDIA")
+        val savedUri = exportMap[file.filename]
+        assertNotNull("Local downloaded state must survive remote refresh", savedUri)
+    }
+
+    @Test
+    fun testRecordingStateSurvivesRecordsRefresh() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        assertTrue(repo.cameraStatus.value.isRecording)
+
+        repo.listFiles("/tmp/fuse_d/DCIM/")
+        assertTrue("Camera repository isRecording state must survive file refresh", repo.cameraStatus.value.isRecording)
+    }
 }

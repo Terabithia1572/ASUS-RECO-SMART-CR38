@@ -58,15 +58,21 @@ object MediaDownloader {
                 insertedUri = resolver.insert(contentUri, contentValues)
                     ?: return@withContext Result.failure(Exception("MediaStore URI oluşturulamadı"))
 
-                val url = URL(file.httpUrl)
+                val resolvedUrl = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
+                android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("DOWNLOAD", file, resolvedUrl))
+
+                val url = URL(resolvedUrl)
                 val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 8000
                 conn.readTimeout = 15000
                 conn.doInput = true
                 conn.connect()
 
-                if (conn.responseCode != HttpURLConnection.HTTP_OK) {
-                    val err = "HTTP ${conn.responseCode}: ${conn.responseMessage}"
+                val statusCode = conn.responseCode
+                android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("DOWNLOAD", file, resolvedUrl, statusCode))
+
+                if (statusCode != HttpURLConnection.HTTP_OK) {
+                    val err = "HTTP $statusCode: ${conn.responseMessage}"
                     conn.disconnect()
                     cleanupIncompleteUri(context, insertedUri)
                     return@withContext Result.failure(Exception(err))
@@ -136,16 +142,22 @@ object MediaDownloader {
                 }
 
                 CameraNetworkManager.bindProcessToWifi(context)
-                val url = URL(file.httpUrl)
+                val resolvedUrl = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
+                android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("CACHE", file, resolvedUrl))
+
+                val url = URL(resolvedUrl)
                 val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 8000
                 conn.readTimeout = 15000
                 conn.doInput = true
                 conn.connect()
 
-                if (conn.responseCode != HttpURLConnection.HTTP_OK) {
+                val statusCode = conn.responseCode
+                android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("CACHE", file, resolvedUrl, statusCode))
+
+                if (statusCode != HttpURLConnection.HTTP_OK) {
                     conn.disconnect()
-                    return@withContext Result.failure(Exception("HTTP ${conn.responseCode}: ${conn.responseMessage}"))
+                    return@withContext Result.failure(Exception("HTTP $statusCode: ${conn.responseMessage}"))
                 }
 
                 val contentLength = conn.contentLengthLong.let { if (it > 0) it else file.sizeBytes }

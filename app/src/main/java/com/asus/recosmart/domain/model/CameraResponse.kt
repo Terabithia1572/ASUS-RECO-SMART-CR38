@@ -15,7 +15,8 @@ data class CameraResponse(
     val chip: String? = null,
     val http: String? = null,
     val rawResponse: String = "",
-    val timestampMs: Long = System.currentTimeMillis()
+    val timestampMs: Long = System.currentTimeMillis(),
+    val discoveredFile: CameraFile? = null
 ) {
     val isSuccess: Boolean
         get() = rval == 0

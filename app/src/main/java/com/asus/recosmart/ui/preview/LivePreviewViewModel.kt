@@ -54,7 +54,8 @@ class LivePreviewViewModel(
 
             if (cameraStatus.value.isRecording) {
                 _statusText.value = "Canlı görüntüye bağlanılıyor (Kayıt Aktif)..."
-                repository.logRtsp("[VF INIT][LIVE_SCREEN_ENTER] Camera is currently RECORDING. Re-attaching RTSP stream directly without resetting viewfinder.")
+                repository.logRtsp("[LIVE] screen enter | recording=true")
+                repository.logRtsp("[LIVE] camera-side preparation skipped because recording is active")
                 onResult(true, null)
                 return@launch
             }
@@ -108,9 +109,16 @@ class LivePreviewViewModel(
             try {
                 val isRecording = cameraStatus.value.isRecording
                 if (isRecording) {
-                    _statusText.value = "Kayıt durduruluyor..."
+                    _statusText.value = "Video kaydı sonlandırılıyor..."
                     val res = repository.stopRecording("USER_RECORD_BUTTON")
-                    _statusText.value = if (res.isSuccess) "Kayıt durduruldu." else "Kayıt durdurulamadı."
+                    val discovered = res.getOrNull()?.discoveredFile
+                    if (discovered != null) {
+                        _statusText.value = "Kayıt kaydedildi: ${discovered.folder}/${discovered.filename}"
+                    } else if (res.isSuccess) {
+                        _statusText.value = "Kayıt durduruldu ancak yeni video henüz bulunamadı. Kayıtları yenileyin."
+                    } else {
+                        _statusText.value = "Kayıt durdurulamadı."
+                    }
                 } else {
                     _statusText.value = "Kayıt başlatılıyor..."
                     val res = repository.startRecording("USER_RECORD_BUTTON")
@@ -129,13 +137,27 @@ class LivePreviewViewModel(
             try {
                 val isRecording = cameraStatus.value.isRecording
                 if (isRecording) {
-                    _statusText.value = "Kayıt sırasında fotoğraf çekiliyor (PHOTO_PIV)..."
+                    _statusText.value = "Kayıt sırasında fotoğraf çekiliyor..."
                     val res = repository.takePhotoPiv()
-                    _statusText.value = if (res.isSuccess) "Kayıt sırasında fotoğraf çekildi." else "Fotoğraf çekilemedi."
+                    val discovered = res.getOrNull()?.discoveredFile
+                    if (discovered != null) {
+                        _statusText.value = "Fotoğraf kaydedildi: ${discovered.folder}/${discovered.filename}"
+                    } else if (res.isSuccess) {
+                        _statusText.value = "Fotoğraf komutu alındı ancak yeni dosya doğrulanamadı."
+                    } else {
+                        _statusText.value = "Fotoğraf çekilemedi."
+                    }
                 } else {
                     _statusText.value = "Fotoğraf çekiliyor..."
                     val res = repository.takePhoto("USER_PHOTO_BUTTON")
-                    _statusText.value = if (res.isSuccess) "Fotoğraf çekildi." else "Fotoğraf çekilemedi."
+                    val discovered = res.getOrNull()?.discoveredFile
+                    if (discovered != null) {
+                        _statusText.value = "Fotoğraf kaydedildi: ${discovered.folder}/${discovered.filename}"
+                    } else if (res.isSuccess) {
+                        _statusText.value = "Fotoğraf komutu alındı ancak yeni dosya doğrulanamadı."
+                    } else {
+                        _statusText.value = "Fotoğraf çekilemedi."
+                    }
                 }
             } finally {
                 isActionPending = false

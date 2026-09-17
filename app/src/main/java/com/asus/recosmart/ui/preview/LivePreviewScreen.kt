@@ -68,7 +68,7 @@ fun LivePreviewScreen(
 
         if (isRealConnected) {
             com.asus.recosmart.data.network.CameraNetworkManager.bindProcessToWifi(context)
-            rtspStreamState = "Preparing Viewfinder (RESET_TO_VF)..."
+            rtspStreamState = if (cameraStatus.isRecording) "Connecting to RTSP..." else "Preparing Viewfinder (RESET_TO_VF)..."
             isPlayerError = false
 
             val requestTimestamp = System.currentTimeMillis()
@@ -93,7 +93,7 @@ fun LivePreviewScreen(
                     addListener(object : Player.Listener {
                         override fun onPlaybackStateChanged(playbackState: Int) {
                             when (playbackState) {
-                                Player.STATE_BUFFERING -> rtspStreamState = "Buffering..."
+                                Player.STATE_BUFFERING -> rtspStreamState = if (cameraStatus.isRecording) "Connecting to RTSP..." else "Buffering..."
                                 Player.STATE_READY -> rtspStreamState = if (isPlaying) "Live" else "Ready (paused)"
                                 Player.STATE_ENDED -> rtspStreamState = "Stream ended"
                                 Player.STATE_IDLE -> rtspStreamState = "Idle"
@@ -284,12 +284,13 @@ fun LivePreviewScreen(
                     }
 
                     if (isPlayerError || rtspStreamState != "Live") {
-                        val displayState = when (rtspStreamState) {
-                            "Preparing Viewfinder (RESET_TO_VF)..." -> "Viewfinder hazırlanıyor (RESET_TO_VF)..."
-                            "Connecting to RTSP..." -> "Canlı görüntü bağlanıyor..."
-                            "Buffering..." -> "Hazırlanıyor..."
-                            "Live" -> "Canlı Görüntü Aktif"
-                            "Paused" -> "Duraklatıldı"
+                        val displayState = when {
+                            cameraStatus.isRecording -> "Canlı görüntüye bağlanılıyor..."
+                            rtspStreamState == "Preparing Viewfinder (RESET_TO_VF)..." -> "Viewfinder hazırlanıyor (RESET_TO_VF)..."
+                            rtspStreamState == "Connecting to RTSP..." -> "Canlı görüntü bağlanıyor..."
+                            rtspStreamState == "Buffering..." -> "Hazırlanıyor..."
+                            rtspStreamState == "Live" -> "Canlı Görüntü Aktif"
+                            rtspStreamState == "Paused" -> "Duraklatıldı"
                             else -> if (isPlayerError) "Canlı görüntü alınamadı" else rtspStreamState
                         }
                         Box(

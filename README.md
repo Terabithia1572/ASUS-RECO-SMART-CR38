@@ -15,14 +15,21 @@ Orijinal mobil uygulamanın eski Android sürümlerine bağımlılığını orta
 
 ---
 
-## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2 Baseline & RC7.3 Updates)
+## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2 Baseline, RC7.3 & RC7.4 Updates)
 
-Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.** Field Test RC7.3, medya HTTP erişim hatası tanılamalarını ve yenileme kullanıcı deneyimini ekler.
+Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.** Field Test RC7.3 medya HTTP erişim yol tanımlamalarını düzeltmiştir. **Field Test RC7.4** ise kayıt esnasında sekme geçişi sürekliliği, kayıt esnasında fotoğraf doğrulaması ve güvenilir MP4 keşfi güncellemelerini ekler *(Fiziksel donanım saha testi kullanıcı tarafından yapılmak üzere beklenmektedir)*.
+
+### Field Test RC7.4 ile Eklenen Özellikler:
+
+- 🔄 **Kayıt Esnasında Kesintisiz Canlı Görüntüye Dönüş (Bug A)**: Video kaydı devam ederken sekmeler arası geçiş yapılıp Canlı Önizleme ekranına dönüldüğünde kameraya asla `RESET_TO_VF` (msg_id 259), `STOP_VF` (msg_id 260) veya `RECORD_STOP` (msg_id 514) komutları gönderilmez. Ekran açılışında "Viewfinder hazırlanıyor..." flicker'ı engellenmiş, doğrudan RTSP akışına bağlanılır.
+- 🔄 **Kayıt Esnasında Fotoğraf Doğrulaması (Bug B / PIV)**: Video kaydı sırasında fotoğraf çekildiğinde sadece komut onayı (`rval = 0`) ile yetinilmez; kamera SD kartı üzerinde (örn: `105MEDIA/FILE0501.JPG`) yeni oluşturulan JPEG dosyası varlık denetimi ile doğrulanır (*Fiziksel donanım saha doğrulaması bekleniyor*).
+- 🔄 **Güvenilir RECORD_STOP ve MP4 Keşfi (Bug C)**: `RECORD_STOP` komutu sonrasında 500 ms, 1000 ms ve 1500 ms adımlı sınırlı yeniden deneme (bounded polling) döngüsü ile yeni oluşturulan MP4 dosyası (`discoveredFile`) kesin olarak doğrulanır ve kullanıcıya bilgilendirme sunulur.
+- 🔄 **Doğrulanmış Dosya Bilgilendirmesi**: Fotoğraf ve video kayıtlarında başarı mesajlarında oluşturulan gerçek dosya yolu (örn: `"Kayıt kaydedildi: 116MEDIA/FILE4089.mp4"`) gösterilir.
 
 ### Field Test RC7.3 ile Eklenen Özellikler:
 
 - 🔄 **Merkezi Medya HTTP URL Çözümleyici (`CameraMediaUrlResolver`)**: Klasör ve dosya isimlerinin orijinal büyük/küçük harf durumunu tam koruyarak ve URL kodlama güvenliğini sağlayarak tek bir merkezden HTTP URL üretimi.
-- 🔄 **Ham HTTP Tanılama Günlükleri**: Fotoğraf önizleme, video oynatma, indirme, önbelleğe alma ve paylaşım işlemlerinde `[MEDIA]` etiketi ile URL ve HTTP durum kodu tanılaması.
+- 🔄 **Ham HTTP Tanılama Günlükleri**: Fotoğraf önizleme, video oynatıcı, indirme, önbelleğe alma ve paylaşım işlemlerinde `[MEDIA]` etiketi ile URL ve HTTP durum kodu tanılaması.
 - 🔄 **Gelişmiş HTTP 404 Hata Yönetimi**: Medya dosyasına HTTP üzerinden erişilemediğinde (404 Not Found vb.) siyah ekran veya 00:00 oynatıcı yerine açıklayıcı hata kartı, `[Yeniden Dene]` ve `[Yenile]` butonları.
 - 🔄 **Manuel ve Pull-to-Refresh Yenileme**: Kayıtlar ekranında yenileme butonu ve yerel Compose Pull-to-Refresh desteği.
 - 🔄 **Kayıt Esnasında Güvenli Yenileme**: Medya listesi yenilenirken kameraya asla `RECORD_STOP`, `STOP_VF` veya `RESET_TO_VF` komutları gönderilmez; aktif kayıt kesintisiz devam eder.
@@ -218,9 +225,16 @@ Built from scratch using modern Android architecture (**Kotlin**, **Jetpack Comp
 
 ---
 
-## 🎯 Hardware Physical Verification Status (Field Test RC7.2 Baseline & RC7.3 Updates)
+## 🎯 Hardware Physical Verification Status (Field Test RC7.2 Baseline, RC7.3 & RC7.4 Updates)
 
-Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.** Field Test RC7.3 adds media HTTP path resolution diagnostics and robust refresh UX.
+Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.** Field Test RC7.3 resolved media HTTP access paths. **Field Test RC7.4** adds video recording tab continuity, photo capture verification during video recording, and reliable bounded MP4 discovery after recording stops *(Physical hardware field verification pending user test)*.
+
+### Added Features in Field Test RC7.4:
+
+- 🔄 **Seamless Live Preview Return During Active Recording (Bug A)**: Navigating between bottom tabs while video recording is active never issues `RESET_TO_VF` (msg_id 259), `STOP_VF` (msg_id 260), or `RECORD_STOP` (msg_id 514). Initial composition immediately enters RTSP connection mode without "Preparing Viewfinder..." UI flicker.
+- 🔄 **Verified Photo Capture During Video Recording (Bug B / PIV)**: Taking a photo while recording does not assume success solely on command ACK (`rval = 0`). It validates the actual creation of a new JPEG file on the SD card (e.g., `105MEDIA/FILE0501.JPG`) via bounded DCIM polling (*Physical hardware verification pending*).
+- 🔄 **Reliable RECORD_STOP & Bounded MP4 Discovery (Bug C)**: Upon `RECORD_STOP`, bounded polling (500ms, 1000ms, 1500ms) compares pre-command file identities to discover and return the newly generated MP4 (`discoveredFile`).
+- 🔄 **Verified File Identity Notifications**: Success notifications display exact relative file paths upon creation (e.g., `"Kayıt kaydedildi: 116MEDIA/FILE4089.mp4"` or `"Fotoğraf kaydedildi: 105MEDIA/FILE0501.JPG"`).
 
 ### Added Features in Field Test RC7.3:
 

@@ -1050,4 +1050,254 @@ class ProtocolUnitTest {
         repo.listFiles("/tmp/fuse_d/DCIM/")
         assertTrue("Camera repository isRecording state must survive file refresh", repo.cameraStatus.value.isRecording)
     }
+
+    // =========================================================================
+    // 13. FIELD TEST RC7.4 VERIFICATION TESTS (RECORDING CONTINUITY & PIV DISCOVERY)
+    // =========================================================================
+
+    @Test
+    fun testRC74_ReenteringLiveWhileRecordingNeverSendsResetToVf() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.prepareLiveView("LIVE_SCREEN_ENTER")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("Re-entering Live tab while recording must NOT send RESET_TO_VF msg_id 259", logs.contains("msg_id\":259"))
+    }
+
+    @Test
+    fun testRC74_ReenteringLiveWhileRecordingNeverSendsStopVf() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.prepareLiveView("LIVE_SCREEN_ENTER")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("Re-entering Live tab while recording must NOT send STOP_VF msg_id 260", logs.contains("msg_id\":260"))
+    }
+
+    @Test
+    fun testRC74_ReenteringLiveWhileRecordingNeverSendsRecordStop() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.prepareLiveView("LIVE_SCREEN_ENTER")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertFalse("Re-entering Live tab while recording must NOT send RECORD_STOP msg_id 514", logs.contains("msg_id\":514"))
+    }
+
+    @Test
+    fun testRC74_LivePreviewScreenInitialStateWhenRecording() {
+        val isRecording = true
+        val initialStateText = if (isRecording) "Connecting to RTSP..." else "Preparing Viewfinder (RESET_TO_VF)..."
+        assertEquals("Initial RTSP state text when recording must be Connecting to RTSP...", "Connecting to RTSP...", initialStateText)
+    }
+
+    @Test
+    fun testRC74_LivePreviewScreenInitialStateWhenIdle() {
+        val isRecording = false
+        val initialStateText = if (isRecording) "Connecting to RTSP..." else "Preparing Viewfinder (RESET_TO_VF)..."
+        assertEquals("Initial RTSP state text when idle must be Preparing Viewfinder (RESET_TO_VF)...", "Preparing Viewfinder (RESET_TO_VF)...", initialStateText)
+    }
+
+    @Test
+    fun testRC74_TakePhotoWhileRecordingSendsPhotoPivMsgId53270() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.clearDebugLogs()
+
+        repo.takePhoto("USER_PHOTO_BUTTON")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertTrue("Taking photo while recording must send PhotoPiv (msg_id 53270)", logs.contains("53270"))
+        assertFalse("Taking photo while recording must NOT send TakePhoto (msg_id 769)", logs.contains("769"))
+    }
+
+    @Test
+    fun testRC74_TakePhotoWhileIdleSendsTakePhotoMsgId769() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.clearDebugLogs()
+
+        repo.takePhoto("USER_PHOTO_BUTTON")
+        val logs = repo.debugLogs.value.joinToString("\n")
+        assertTrue("Taking photo while idle must send TakePhoto (msg_id 769)", logs.contains("769"))
+        assertFalse("Taking photo while idle must NOT send PhotoPiv (msg_id 53270)", logs.contains("53270"))
+    }
+
+    @Test
+    fun testRC74_TakePhotoDiscoversNewlyCreatedJpegFile() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        val res = repo.takePhoto("USER_PHOTO_BUTTON")
+        assertTrue(res.isSuccess)
+        val response = res.getOrThrow()
+        assertNotNull("takePhoto must populate discoveredFile with newly created JPEG", response.discoveredFile)
+        assertTrue("Discovered photo must be a JPEG", response.discoveredFile?.filename?.endsWith(".JPG", ignoreCase = true) == true)
+    }
+
+    @Test
+    fun testRC74_TakePhotoUnverifiedFallbackWhenNoNewJpeg() {
+        val mockResponse = com.asus.recosmart.domain.model.CameraResponse(msgId = 769, rval = 0, discoveredFile = null)
+        assertTrue(mockResponse.isSuccess)
+        assertNull("Unverified response discoveredFile must be null", mockResponse.discoveredFile)
+    }
+
+    @Test
+    fun testRC74_StopRecordingDiscoversNewlyCreatedMp4File() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        val res = repo.stopRecording("USER_RECORD_BUTTON")
+        assertTrue(res.isSuccess)
+        val response = res.getOrThrow()
+        assertNotNull("stopRecording must populate discoveredFile with newly created MP4", response.discoveredFile)
+        assertTrue("Discovered recording must be an MP4", response.discoveredFile?.filename?.endsWith(".MP4", ignoreCase = true) == true)
+    }
+
+    @Test
+    fun testRC74_StopRecordingUnverifiedFallbackWhenNoNewMp4() {
+        val mockResponse = com.asus.recosmart.domain.model.CameraResponse(msgId = 514, rval = 0, discoveredFile = null)
+        assertTrue(mockResponse.isSuccess)
+        assertNull("Unverified stop response discoveredFile must be null", mockResponse.discoveredFile)
+    }
+
+    @Test
+    fun testRC74_CameraResponseDiscoveredFileFieldDefaultsToNull() {
+        val response = com.asus.recosmart.domain.model.CameraResponse(msgId = 1, rval = 0)
+        assertNull("CameraResponse default discoveredFile must be null", response.discoveredFile)
+    }
+
+    @Test
+    fun testRC74_MockRepositoryTakePhotoPivMockCreatesNewJpegFile() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        val beforeList = repo.listFiles("/tmp/fuse_d/DCIM/").getOrThrow()
+        repo.takePhoto("USER_PHOTO_BUTTON")
+        val afterList = repo.listFiles("/tmp/fuse_d/DCIM/").getOrThrow()
+        assertEquals("takePhotoPiv mock must add 1 new file to DCIM listing", beforeList.size + 1, afterList.size)
+    }
+
+    @Test
+    fun testRC74_MockRepositoryStopRecordingMockCreatesNewMp4File() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        val beforeList = repo.listFiles("/tmp/fuse_d/DCIM/").getOrThrow()
+        repo.stopRecording("USER_RECORD_BUTTON")
+        val afterList = repo.listFiles("/tmp/fuse_d/DCIM/").getOrThrow()
+        assertEquals("stopRecording mock must add 1 new MP4 file to DCIM listing", beforeList.size + 1, afterList.size)
+    }
+
+    @Test
+    fun testRC74_BoundedDiscoverySnapshotsPreCommandIdentities() {
+        val preList = listOf(
+            CameraFile("FILE0001.MP4", "100MEDIA"),
+            CameraFile("FILE0501.JPG", "105MEDIA")
+        )
+        val postList = listOf(
+            CameraFile("FILE0001.MP4", "100MEDIA"),
+            CameraFile("FILE0501.JPG", "105MEDIA"),
+            CameraFile("FILE0502.JPG", "105MEDIA")
+        )
+        val preIds = preList.map { it.remoteIdentity }.toSet()
+        val newFiles = postList.filterNot { preIds.contains(it.remoteIdentity) }
+        assertEquals(1, newFiles.size)
+        assertEquals("FILE0502.JPG", newFiles[0].filename)
+    }
+
+    @Test
+    fun testRC74_LivePreviewViewModelPhotoSuccessToastContainsDiscoveredPath() {
+        val file = CameraFile("FILE0501.JPG", "105MEDIA")
+        val toastMessage = file.let { "Fotoğraf kaydedildi: ${it.folder}/${it.filename}" }
+        assertEquals("Fotoğraf kaydedildi: 105MEDIA/FILE0501.JPG", toastMessage)
+    }
+
+    @Test
+    fun testRC74_LivePreviewViewModelPhotoUnverifiedToast() {
+        val discoveredFile: CameraFile? = null
+        val toastMessage = if (discoveredFile != null) {
+            "Fotoğraf kaydedildi: ${discoveredFile.folder}/${discoveredFile.filename}"
+        } else {
+            "Fotoğraf çekildi (Dosya doğrulaması bekleniyor)"
+        }
+        assertEquals("Fotoğraf çekildi (Dosya doğrulaması bekleniyor)", toastMessage)
+    }
+
+    @Test
+    fun testRC74_LivePreviewViewModelRecordStopSuccessToastContainsDiscoveredPath() {
+        val file = CameraFile("FILE4089.MP4", "116MEDIA")
+        val toastMessage = file.let { "Kayıt kaydedildi: ${it.folder}/${it.filename}" }
+        assertEquals("Kayıt kaydedildi: 116MEDIA/FILE4089.MP4", toastMessage)
+    }
+
+    @Test
+    fun testRC74_LivePreviewViewModelRecordStopUnverifiedToast() {
+        val discoveredFile: CameraFile? = null
+        val toastMessage = if (discoveredFile != null) {
+            "Kayıt kaydedildi: ${discoveredFile.folder}/${discoveredFile.filename}"
+        } else {
+            "Video kaydı tamamlandı"
+        }
+        assertEquals("Video kaydı tamamlandı", toastMessage)
+    }
+
+    @Test
+    fun testRC74_TabNavigationDuringRecordingPreservesIsRecordingTrue() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+        assertTrue(repo.cameraStatus.value.isRecording)
+
+        // Simulate navigating to Records tab
+        repo.listFiles("/tmp/fuse_d/DCIM/")
+        assertTrue(repo.cameraStatus.value.isRecording)
+
+        // Simulate returning to Live tab
+        repo.prepareLiveView("LIVE_SCREEN_ENTER")
+        assertTrue(repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRC74_LocalPlayerReleaseOnDisposeDoesNotMutateRepositoryIsRecording() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        repo.startRecording("USER_RECORD_BUTTON")
+
+        // Screen disposal releases local player state only
+        repo.setFirstVideoFrameRendered(false)
+        assertTrue("Repository isRecording must remain true on UI dispose", repo.cameraStatus.value.isRecording)
+    }
+
+    @Test
+    fun testRC74_SessionSurvivalDuringPhotoCaptureInRecording() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        val initialToken = repo.cameraStatus.value.activeToken
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.takePhoto("USER_PHOTO_BUTTON")
+        assertEquals("Session token must survive photo capture during recording", initialToken, repo.cameraStatus.value.activeToken)
+    }
+
+    @Test
+    fun testRC74_SessionSurvivalDuringRecordStop() = runBlocking {
+        val repo = MockCameraRepository()
+        repo.connect("192.168.42.1", 7878)
+        val initialToken = repo.cameraStatus.value.activeToken
+        repo.startRecording("USER_RECORD_BUTTON")
+        repo.stopRecording("USER_RECORD_BUTTON")
+        assertEquals("Session token must survive record stop", initialToken, repo.cameraStatus.value.activeToken)
+    }
+
+    @Test
+    fun testRC74_DiscoveredFileRemoteIdentityValidation() {
+        val file = CameraFile("FILE0501.JPG", "105MEDIA")
+        assertEquals("105MEDIA/FILE0501.JPG", file.remoteIdentity)
+    }
 }

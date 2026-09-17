@@ -90,7 +90,7 @@ fun ConnectionScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = "Field Test RC7.3",
+                                text = "Field Test RC7.4",
                                 color = PrimaryCyan,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,

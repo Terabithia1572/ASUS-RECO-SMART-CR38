@@ -138,19 +138,20 @@ class MockCameraRepository : CameraRepository {
         log("[REC] refreshing DCIM")
         log("[REC] new media discovered: ${newFile.filename}")
 
-        return Result.success(response)
+        return Result.success(response.copy(discoveredFile = newFile))
     }
 
     override suspend fun takePhoto(origin: String): Result<CameraResponse> {
         val token = _cameraStatus.value.activeToken
         log("[CMD][origin=$origin] [MOCK TX] -> {\"msg_id\":769,\"token\":$token}")
         delay(350)
-        val response = CameraResponse(msgId = 769, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":769}")
-        log("[MOCK RX] <- ${response.rawResponse}")
 
         val nextId = mockFiles.size + 1
         val newFile = CameraFile("LOCA${String.format("%04d", nextId)}.JPG", "100MEDIA", 3800000L, getCurrentTimestamp())
         mockFiles.add(0, newFile)
+
+        val response = CameraResponse(msgId = 769, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":769}", discoveredFile = newFile)
+        log("[MOCK RX] <- ${response.rawResponse}")
 
         return Result.success(response)
     }
@@ -267,12 +268,13 @@ class MockCameraRepository : CameraRepository {
         val token = _cameraStatus.value.activeToken
         log("[MOCK TX] -> {\"msg_id\":53270,\"token\":$token}")
         delay(350)
-        val response = CameraResponse(msgId = 53270, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":53270}")
-        log("[MOCK RX] <- ${response.rawResponse}")
 
         val nextId = mockFiles.size + 1
         val newFile = CameraFile("PIV_${String.format("%04d", nextId)}.JPG", "100MEDIA", 3900000L, getCurrentTimestamp())
         mockFiles.add(0, newFile)
+
+        val response = CameraResponse(msgId = 53270, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":53270}", discoveredFile = newFile)
+        log("[MOCK RX] <- ${response.rawResponse}")
 
         return Result.success(response)
     }

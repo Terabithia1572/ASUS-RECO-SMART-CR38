@@ -57,7 +57,7 @@ fun AboutScreen() {
                 border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryCyan)
             ) {
                 Text(
-                    text = "Field Test RC7.4",
+                    text = "Field Test RC7.5",
                     color = PrimaryCyan,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,

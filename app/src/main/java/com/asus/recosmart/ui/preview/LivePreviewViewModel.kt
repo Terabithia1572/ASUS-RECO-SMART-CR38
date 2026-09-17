@@ -115,7 +115,7 @@ class LivePreviewViewModel(
                     if (discovered != null) {
                         _statusText.value = "Kayıt kaydedildi: ${discovered.folder}/${discovered.filename}"
                     } else if (res.isSuccess) {
-                        _statusText.value = "Kayıt durduruldu ancak yeni video henüz bulunamadı. Kayıtları yenileyin."
+                        _statusText.value = "Kayıt durduruldu. Video dosyası henüz listede görünmüyor."
                     } else {
                         _statusText.value = "Kayıt durdurulamadı."
                     }
@@ -135,29 +135,15 @@ class LivePreviewViewModel(
         isActionPending = true
         viewModelScope.launch {
             try {
-                val isRecording = cameraStatus.value.isRecording
-                if (isRecording) {
-                    _statusText.value = "Kayıt sırasında fotoğraf çekiliyor..."
-                    val res = repository.takePhotoPiv()
-                    val discovered = res.getOrNull()?.discoveredFile
-                    if (discovered != null) {
-                        _statusText.value = "Fotoğraf kaydedildi: ${discovered.folder}/${discovered.filename}"
-                    } else if (res.isSuccess) {
-                        _statusText.value = "Fotoğraf komutu alındı ancak yeni dosya doğrulanamadı."
-                    } else {
-                        _statusText.value = "Fotoğraf çekilemedi."
-                    }
+                _statusText.value = "Fotoğraf çekiliyor..."
+                val res = repository.takePhoto("USER_PHOTO_BUTTON")
+                val discovered = res.getOrNull()?.discoveredFile
+                if (discovered != null) {
+                    _statusText.value = "Fotoğraf kaydedildi: ${discovered.folder}/${discovered.filename}"
+                } else if (res.isSuccess) {
+                    _statusText.value = "Fotoğraf çekildi, dosya henüz listede görünmüyor."
                 } else {
-                    _statusText.value = "Fotoğraf çekiliyor..."
-                    val res = repository.takePhoto("USER_PHOTO_BUTTON")
-                    val discovered = res.getOrNull()?.discoveredFile
-                    if (discovered != null) {
-                        _statusText.value = "Fotoğraf kaydedildi: ${discovered.folder}/${discovered.filename}"
-                    } else if (res.isSuccess) {
-                        _statusText.value = "Fotoğraf komutu alındı ancak yeni dosya doğrulanamadı."
-                    } else {
-                        _statusText.value = "Fotoğraf çekilemedi."
-                    }
+                    _statusText.value = "Fotoğraf çekilemedi."
                 }
             } finally {
                 isActionPending = false

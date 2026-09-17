@@ -244,26 +244,20 @@ class DefaultCameraRepository : CameraRepository {
     override suspend fun stopRecording(origin: String): Result<CameraResponse> {
         if (_isMockMode.value) return mockRepository.stopRecording(origin)
 
-        val beforeMp4Identities = try {
-            listFiles(CameraStatus.DEFAULT_DCIM_PATH).getOrDefault(emptyList())
-                .filter { it.isVideo }
-                .map { it.remoteIdentity }
-                .toSet()
-        } catch (e: Exception) {
-            emptySet()
-        }
-
-        tcpClient.log("[REC] stop requested [origin=$origin] | beforeMp4Count=${beforeMp4Identities.size}")
+        tcpClient.log("[CTRL] RECORD_STOP button pressed [origin=$origin]")
+        tcpClient.log("[CTRL] RECORD_STOP TX msg_id=514")
         val result = sendCommandInternal(CameraCommand.RecordStop)
         val resp = result.getOrNull()
+        tcpClient.log("[CTRL] RECORD_STOP RX rval=${resp?.rval ?: -1}")
+        tcpClient.log("[CTRL] RECORD_STOP command completed")
+
         if (resp == null || !resp.isSuccess) {
-            tcpClient.log("[REC] RECORD_STOP failed: ${result.exceptionOrNull()?.localizedMessage}")
+            tcpClient.log("[REC] RECORD_STOP failed: ${result.exceptionOrNull()?.localizedMessage ?: "rval=${resp?.rval}"}")
             return result
         }
 
-        tcpClient.log("[REC] RECORD_STOP acknowledged")
         _cameraStatus.value = _cameraStatus.value.copy(isRecording = false)
-        tcpClient.log("[REC] waiting for recording finalization")
+        tcpClient.log("[STATE][RECORDING=FALSE] Video recording stopped cleanly.")
 
         val retryDelaysMs = listOf(500L, 1000L, 1500L)
         var discoveredFile: CameraFile? = null
@@ -275,10 +269,10 @@ class DefaultCameraRepository : CameraRepository {
             val currentListRes = listFiles(CameraStatus.DEFAULT_DCIM_PATH)
             if (currentListRes.isSuccess) {
                 val currentFiles = currentListRes.getOrDefault(emptyList())
-                val newMp4 = currentFiles.find { it.isVideo && !beforeMp4Identities.contains(it.remoteIdentity) }
-                if (newMp4 != null) {
-                    discoveredFile = newMp4
-                    tcpClient.log("[REC] new MP4 discovered=${newMp4.folder}/${newMp4.filename}")
+                val latestMp4 = currentFiles.filter { it.isVideo }.maxByOrNull { it.dateTime }
+                if (latestMp4 != null) {
+                    discoveredFile = latestMp4
+                    tcpClient.log("[REC] MP4 discovered=${latestMp4.folder}/${latestMp4.filename}")
                     break
                 }
             }
@@ -293,7 +287,44 @@ class DefaultCameraRepository : CameraRepository {
 
     override suspend fun takePhoto(origin: String): Result<CameraResponse> {
         if (_isMockMode.value) return mockRepository.takePhoto(origin)
-        return executePhotoTransaction(CameraCommand.TakePhoto, origin = origin)
+
+        tcpClient.log("[CTRL] TAKE_PHOTO button pressed [origin=$origin]")
+        tcpClient.log("[CTRL] TAKE_PHOTO TX msg_id=769")
+        val result = sendCommandInternal(CameraCommand.TakePhoto)
+        val resp = result.getOrNull()
+        tcpClient.log("[CTRL] TAKE_PHOTO RX rval=${resp?.rval ?: -1}")
+
+        if (resp == null || !resp.isSuccess) {
+            tcpClient.log("[PHOTO] TAKE_PHOTO failed: ${result.exceptionOrNull()?.localizedMessage ?: "rval=${resp?.rval}"}")
+            return result
+        }
+
+        tcpClient.log("[PHOTO] TAKE_PHOTO acknowledged")
+
+        val retryDelaysMs = listOf(400L, 800L, 1200L)
+        var discoveredFile: CameraFile? = null
+
+        for ((index, delayMs) in retryDelaysMs.withIndex()) {
+            delay(delayMs)
+            val attempt = index + 1
+            tcpClient.log("[PHOTO] discovery attempt=$attempt")
+            val currentListRes = listFiles(CameraStatus.DEFAULT_DCIM_PATH)
+            if (currentListRes.isSuccess) {
+                val currentFiles = currentListRes.getOrDefault(emptyList())
+                val latestJpeg = currentFiles.filter { it.isPhoto }.maxByOrNull { it.dateTime }
+                if (latestJpeg != null) {
+                    discoveredFile = latestJpeg
+                    tcpClient.log("[PHOTO] JPEG discovered=${latestJpeg.folder}/${latestJpeg.filename}")
+                    break
+                }
+            }
+        }
+
+        if (discoveredFile == null) {
+            tcpClient.log("[PHOTO] no JPEG discovered after timeout")
+        }
+
+        return Result.success(resp.copy(discoveredFile = discoveredFile))
     }
 
     override suspend fun fetchAllSettings(): Result<List<CameraSetting>> {
@@ -490,54 +521,7 @@ class DefaultCameraRepository : CameraRepository {
 
     override suspend fun takePhotoPiv(): Result<CameraResponse> {
         if (_isMockMode.value) return mockRepository.takePhotoPiv()
-        return executePhotoTransaction(CameraCommand.PhotoPiv, origin = "PIV_RECORDING")
-    }
-
-    private suspend fun executePhotoTransaction(command: CameraCommand, origin: String): Result<CameraResponse> {
-        val isRecording = _cameraStatus.value.isRecording
-        val beforeJpegIdentities = try {
-            listFiles(CameraStatus.DEFAULT_DCIM_PATH).getOrDefault(emptyList())
-                .filter { it.isPhoto }
-                .map { it.remoteIdentity }
-                .toSet()
-        } catch (e: Exception) {
-            emptySet()
-        }
-
-        tcpClient.log("[PHOTO] requested recording=$isRecording [origin=$origin] | beforeJpegCount=${beforeJpegIdentities.size}")
-        val result = sendCommandInternal(command)
-        val resp = result.getOrNull()
-        if (resp == null || !resp.isSuccess) {
-            tcpClient.log("[PHOTO] command failed: ${result.exceptionOrNull()?.localizedMessage}")
-            return result
-        }
-
-        tcpClient.log("[PHOTO] ${command.commandName} acknowledged")
-
-        val retryDelaysMs = listOf(400L, 800L, 1200L)
-        var discoveredFile: CameraFile? = null
-
-        for ((index, delayMs) in retryDelaysMs.withIndex()) {
-            delay(delayMs)
-            val attempt = index + 1
-            tcpClient.log("[PHOTO] discovery attempt=$attempt")
-            val currentListRes = listFiles(CameraStatus.DEFAULT_DCIM_PATH)
-            if (currentListRes.isSuccess) {
-                val currentFiles = currentListRes.getOrDefault(emptyList())
-                val newJpeg = currentFiles.find { it.isPhoto && !beforeJpegIdentities.contains(it.remoteIdentity) }
-                if (newJpeg != null) {
-                    discoveredFile = newJpeg
-                    tcpClient.log("[PHOTO] new JPEG discovered=${newJpeg.folder}/${newJpeg.filename}")
-                    break
-                }
-            }
-        }
-
-        if (discoveredFile == null) {
-            tcpClient.log("[PHOTO] no JPEG discovered after timeout")
-        }
-
-        return Result.success(resp.copy(discoveredFile = discoveredFile))
+        return takePhoto("PIV_RECORDING")
     }
 
     override suspend fun getDeviceInformation(): Result<CameraResponse> {

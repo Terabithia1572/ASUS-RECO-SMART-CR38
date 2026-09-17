@@ -265,18 +265,7 @@ class MockCameraRepository : CameraRepository {
     }
 
     override suspend fun takePhotoPiv(): Result<CameraResponse> {
-        val token = _cameraStatus.value.activeToken
-        log("[MOCK TX] -> {\"msg_id\":53270,\"token\":$token}")
-        delay(350)
-
-        val nextId = mockFiles.size + 1
-        val newFile = CameraFile("PIV_${String.format("%04d", nextId)}.JPG", "100MEDIA", 3900000L, getCurrentTimestamp())
-        mockFiles.add(0, newFile)
-
-        val response = CameraResponse(msgId = 53270, rval = 0, token = token, rawResponse = "{\"rval\":0,\"msg_id\":53270}", discoveredFile = newFile)
-        log("[MOCK RX] <- ${response.rawResponse}")
-
-        return Result.success(response)
+        return takePhoto("PIV_RECORDING")
     }
 
     override suspend fun getDeviceInformation(): Result<CameraResponse> {

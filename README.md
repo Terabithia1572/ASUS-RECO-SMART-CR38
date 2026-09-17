@@ -15,9 +15,20 @@ Orijinal mobil uygulamanın eski Android sürümlerine bağımlılığını orta
 
 ---
 
-## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2 Baseline, RC7.3 & RC7.4 Updates)
+## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2 Baseline, RC7.3, RC7.4 & RC7.5 Updates)
 
-Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.** Field Test RC7.3 medya HTTP erişim yol tanımlamalarını düzeltmiştir. **Field Test RC7.4** ise kayıt esnasında sekme geçişi sürekliliği, kayıt esnasında fotoğraf doğrulaması ve güvenilir MP4 keşfi güncellemelerini ekler *(Fiziksel donanım saha testi kullanıcı tarafından yapılmak üzere beklenmektedir)*.
+Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.** Field Test RC7.4 ile canlı görüntü stabiliitesi ve sekme sürekliliği sağlanmıştır. **Field Test RC7.5**, RC7.4'teki stabil canlı görüntüyü aynen koruyarak tarihsel olarak doğrulanan `TAKE_PHOTO` (msg_id 769) ve `RECORD_STOP` (msg_id 514) kontrol protokollerini ve hata durum modellemesini restore eder *(Fiziksel donanım saha testi kullanıcı tarafından yapılmak üzere beklenmektedir)*.
+
+### Field Test RC7.5 ile Eklenen / Düzeltilen Özellikler:
+
+- 🔄 **Fiziksel Olarak Doğrulanan Fotoğraf Protokolü (`TAKE_PHOTO` msg_id 769)**: Hem boşta (idle) hem de aktif video kaydı esnasında fotoğraf çekimi için tarihsel olarak çalışan tekil `TAKE_PHOTO` (msg_id 769) komutuna geri dönüldü (`PhotoPiv` msg_id 53270 kaldırıldı).
+- 🔄 **Kritik Kontrol Öncesi Liste Tarama Kaldırıldı**: Fotoğraf çekme (`TAKE_PHOTO`) veya kaydı durdurma (`RECORD_STOP`) öncesinde TCP port 7878 üzerinden komut soketini kilitleyen `listFiles()` çağrısı kaldırıldı; kontrol komutları anında iletilir.
+- 🔄 **Ayrıştırılmış Komut Onayı ve Dosya Doğrulaması**:
+  - `RECORD_STOP` komut onayı (`rval = 0`) alındığında kamera kayıt durumu (`isRecording`) anında `false` yapılır.
+  - Komut sonrası sınırlı yeniden deneme (bounded polling) ile MP4/JPEG keşfi yapılır.
+  - Komut başarılı ancak dosya keşfi zaman aşımına uğrarsa UI: `"Kayıt durduruldu. Video dosyası henüz listede görünmüyor."` veya `"Fotoğraf çekildi, dosya henüz listede görünmüyor."` gösterir.
+  - UI'da `"Kayıt durdurulamadı."` veya `"Fotoğraf çekilemedi."` mesajı **YALNIZCA** protokol komutunun kendisi başarısız olduğunda (`rval != 0` veya ağ hatası) gösterilir.
+- 🔄 **RC7.4 Stabil Canlı Görüntü Korundu**: Kayıt aktifken sekmeler arası geçiş ve Canlı Önizleme ekranına geri dönüş non-destructive (sıfırlamasız) çalışmaya devam eder.
 
 ### Field Test RC7.4 ile Eklenen Özellikler:
 
@@ -225,9 +236,18 @@ Built from scratch using modern Android architecture (**Kotlin**, **Jetpack Comp
 
 ---
 
-## 🎯 Hardware Physical Verification Status (Field Test RC7.2 Baseline, RC7.3 & RC7.4 Updates)
+## 🎯 Hardware Physical Verification Status (Field Test RC7.2 Baseline, RC7.3, RC7.4 & RC7.5 Updates)
 
-Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.** Field Test RC7.3 resolved media HTTP access paths. **Field Test RC7.4** adds video recording tab continuity, photo capture verification during video recording, and reliable bounded MP4 discovery after recording stops *(Physical hardware field verification pending user test)*.
+Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.** RC7.4 established stable Live Preview and tab navigation continuity. **Field Test RC7.5** preserves stable Live Preview while restoring historically proven `TAKE_PHOTO` (msg_id 769) and `RECORD_STOP` (msg_id 514) control protocols and result modeling *(Physical hardware field verification pending user test)*.
+
+### Added / Restored Features in Field Test RC7.5:
+
+- Restored `TAKE_PHOTO` (msg_id 769) as the single authoritative photo command for both idle and active video recording states (removed `PhotoPiv` msg_id 53270).
+- Removed pre-command `listFiles()` socket calls prior to `TAKE_PHOTO` and `RECORD_STOP`, eliminating command channel contention.
+- Separated protocol command ACK (`rval == 0`) from post-command file discovery.
+- `RECORD_STOP` ACK immediately updates `isRecording = false` state.
+- Distinct UI notifications: `"Kayıt durdurulamadı."` or `"Fotoğraf çekilemedi."` are displayed **ONLY** when the protocol command itself fails.
+- Preserved RC7.4 stable Live Preview lifecycle and non-destructive tab navigation.
 
 ### Added Features in Field Test RC7.4:
 

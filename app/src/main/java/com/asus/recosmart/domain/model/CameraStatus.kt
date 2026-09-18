@@ -44,3 +44,16 @@ enum class CameraMode {
     TIMELAPSE,
     BURST
 }
+
+data class ConnectionDiagnosticResult(
+    val wifiRouteOk: Boolean = false,
+    val tcp7878Ok: Boolean = false,
+    val sessionOk: Boolean = false,
+    val tokenOk: Boolean = false,
+    val dataSocket8787Ok: Boolean = false,
+    val latencyMs: Long = -1L,
+    val summary: String = ""
+) {
+    val isAllPass: Boolean
+        get() = wifiRouteOk && tcp7878Ok && sessionOk && tokenOk && dataSocket8787Ok
+}

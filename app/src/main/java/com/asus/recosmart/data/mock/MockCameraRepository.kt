@@ -338,6 +338,19 @@ class MockCameraRepository : CameraRepository {
         return Result.success(response)
     }
 
+    override suspend fun performConnectionDiagnostic(): com.asus.recosmart.domain.model.ConnectionDiagnosticResult {
+        delay(200)
+        return com.asus.recosmart.domain.model.ConnectionDiagnosticResult(
+            wifiRouteOk = true,
+            tcp7878Ok = true,
+            sessionOk = true,
+            tokenOk = true,
+            dataSocket8787Ok = true,
+            latencyMs = 12L,
+            summary = "Simülasyon Modu: Tüm bağlantı testleri başarılı."
+        )
+    }
+
     override fun toggleMockMode(enabled: Boolean) {
         _isMockMode.value = enabled
         if (enabled) {

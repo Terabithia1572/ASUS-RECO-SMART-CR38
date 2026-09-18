@@ -60,9 +60,17 @@ class TcpSocketClient {
     suspend fun connectCommandSocket(ip: String, commandPort: Int, timeoutMs: Int = 4000): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             disconnect()
-            log("[REAL CONNECT] Initiating TCP connection to $ip:$commandPort (timeout: ${timeoutMs}ms)...")
-            val newSocket = Socket()
-            CameraNetworkManager.bindSocketToWifi(newSocket)
+            log("[NET] connection requested")
+            log("[NET] cameraIp=$ip")
+
+            val wifiNetwork = CameraNetworkManager.getCameraWifiNetwork()
+            val wifiSelected = wifiNetwork != null
+            log("[NET] Wi-Fi network selected=$wifiSelected")
+
+            log("[NET] binding command socket to camera Wi-Fi")
+            log("[NET] connecting $ip:$commandPort")
+
+            val newSocket = CameraNetworkManager.createWifiSocket()
             newSocket.connect(InetSocketAddress(ip, commandPort), timeoutMs)
             newSocket.soTimeout = timeoutMs
 
@@ -72,10 +80,11 @@ class TcpSocketClient {
             receiveBuffer.reset()
             _isTransportHealthy = true
 
-            log("[REAL CONNECT] TCP socket established with $ip:$commandPort (Wi-Fi bound)")
+            log("[TCP] $commandPort connected")
             Result.success(Unit)
         } catch (e: Exception) {
-            val msg = "TCP Connection failed to $ip:$commandPort: ${e.localizedMessage}"
+            val msg = "TCP $commandPort failed: ${e.localizedMessage}"
+            log("[TCP] $commandPort failed: ${e.localizedMessage}")
             log("[REAL ERROR] $msg")
             disconnect()
             Result.failure(e)
@@ -84,19 +93,20 @@ class TcpSocketClient {
 
     suspend fun connectDataSocket(ip: String, dataPort: Int, timeoutMs: Int = 4000): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            log("[NET] binding data socket to camera Wi-Fi")
             log("[REAL CONNECT] Opening secondary data socket $ip:$dataPort...")
-            val newDataSocket = Socket()
-            CameraNetworkManager.bindSocketToWifi(newDataSocket)
+            val newDataSocket = CameraNetworkManager.createWifiSocket()
             newDataSocket.connect(InetSocketAddress(ip, dataPort), timeoutMs)
             newDataSocket.soTimeout = timeoutMs
 
             dataSocket = newDataSocket
             dataOutputStream = newDataSocket.getOutputStream()
 
-            log("[REAL CONNECT] Secondary data socket connected to $ip:$dataPort")
+            log("[TCP] $dataPort connected")
             Result.success(Unit)
         } catch (e: Exception) {
-            val msg = "Secondary data socket connection notice ($ip:$dataPort): ${e.localizedMessage}"
+            val msg = "Secondary data socket $dataPort connection error: ${e.localizedMessage}"
+            log("[TCP] $dataPort failed: ${e.localizedMessage}")
             log("[REAL ERROR] $msg")
             Result.failure(e)
         }
@@ -129,6 +139,9 @@ class TcpSocketClient {
             try {
                 val payload = CommandSerializer.serialize(command, token)
                 val txBytes = payload.toByteArray(Charsets.UTF_8)
+                if (command is CameraCommand.StartSession) {
+                    log("[SESSION] START_SESSION TX")
+                }
                 log("[REAL TX] Host: $host:$port | Cmd: ${command.commandName} | msg_id: ${command.msgId} | token: $token | bytes: ${txBytes.size} | JSON: $payload")
 
                 outStream.write(txBytes)
@@ -153,6 +166,10 @@ class TcpSocketClient {
                     val isCorrelatedMatch = isMsgIdMatch && isTypeMatch
 
                     if (isCorrelatedMatch) {
+                        if (command is CameraCommand.StartSession) {
+                            log("[SESSION] START_SESSION RX")
+                            log("[SESSION] token=${if (parsed.token > 0) "present (${parsed.token})" else "none/invalid"}")
+                        }
                         log("[REAL RX] Host: $host:$port | Elapsed: ${elapsedMs}ms | Size: ${rxByteCount}b | RAW: $rawResponse")
                         log("[REAL RESPONSE MATCH] ${command.commandName} satisfied after ${elapsedMs}ms: msg_id=${parsed.msgId}, rval=${parsed.rval}, token=${parsed.token}, param=${parsed.param}, type=${parsed.type}")
                         matchedResponse = parsed

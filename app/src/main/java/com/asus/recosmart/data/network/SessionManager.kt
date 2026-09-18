@@ -19,12 +19,28 @@ class SessionManager {
     val isConnected: Boolean
         get() = _sessionState.value is SessionState.Connected
 
+    fun setState(state: SessionState) {
+        _sessionState.value = state
+    }
+
+    fun setTcpConnecting() {
+        _sessionState.value = SessionState.TcpConnecting
+    }
+
     fun setTcpConnected() {
         _sessionState.value = SessionState.TcpConnected
     }
 
+    fun setTcpConnectionFailed(reason: String) {
+        _sessionState.value = SessionState.TcpConnectionFailed(reason)
+    }
+
     fun setSessionStarting() {
         _sessionState.value = SessionState.SessionStarting
+    }
+
+    fun setStartSessionSent() {
+        _sessionState.value = SessionState.StartSessionSent
     }
 
     fun setConnected(token: Int) {

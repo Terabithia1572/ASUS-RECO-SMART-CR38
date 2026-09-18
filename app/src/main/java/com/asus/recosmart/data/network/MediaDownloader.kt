@@ -29,7 +29,6 @@ object MediaDownloader {
         onProgress: (Int) -> Unit = {}
     ): Result<Uri> = withContext(Dispatchers.IO) {
         mediaTransferMutex.withLock {
-            CameraNetworkManager.bindProcessToWifi(context)
             var insertedUri: Uri? = null
             try {
                 val isVideo = file.isVideo
@@ -62,7 +61,7 @@ object MediaDownloader {
                 android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("DOWNLOAD", file, resolvedUrl))
 
                 val url = URL(resolvedUrl)
-                val conn = url.openConnection() as HttpURLConnection
+                val conn = CameraNetworkManager.openWifiHttpConnection(url, context)
                 conn.connectTimeout = 8000
                 conn.readTimeout = 15000
                 conn.doInput = true
@@ -141,12 +140,11 @@ object MediaDownloader {
                     return@withContext Result.success(FileProvider.getUriForFile(context, authority, cachedFile))
                 }
 
-                CameraNetworkManager.bindProcessToWifi(context)
                 val resolvedUrl = com.asus.recosmart.domain.model.CameraMediaUrlResolver.resolve(file)
                 android.util.Log.d("MEDIA", com.asus.recosmart.domain.model.CameraMediaUrlResolver.formatDiagnosticLog("CACHE", file, resolvedUrl))
 
                 val url = URL(resolvedUrl)
-                val conn = url.openConnection() as HttpURLConnection
+                val conn = CameraNetworkManager.openWifiHttpConnection(url, context)
                 conn.connectTimeout = 8000
                 conn.readTimeout = 15000
                 conn.doInput = true

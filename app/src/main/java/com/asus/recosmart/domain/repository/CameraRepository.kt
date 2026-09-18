@@ -33,6 +33,7 @@ interface CameraRepository {
     suspend fun getDeviceInformation(): Result<CameraResponse>
     suspend fun getAppStatus(): Result<com.asus.recosmart.domain.model.DeviceStatus>
     suspend fun sendRawCommand(msgId: Int, param: String? = null): Result<CameraResponse>
+    suspend fun performConnectionDiagnostic(): com.asus.recosmart.domain.model.ConnectionDiagnosticResult
     fun toggleMockMode(enabled: Boolean)
     fun clearDebugLogs()
     fun logRtsp(message: String)

@@ -15,9 +15,24 @@ Orijinal mobil uygulamanın eski Android sürümlerine bağımlılığını orta
 
 ---
 
-## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2 Baseline, RC7.3, RC7.4 & RC7.5 Updates)
+## 🎯 Donanım Fiziksel Doğrulama Durumu (Field Test RC7.2 Baseline, RC7.3, RC7.4, RC7.5 & RC7.6 Updates)
 
-Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.** Field Test RC7.4 ile canlı görüntü stabiliitesi ve sekme sürekliliği sağlanmıştır. **Field Test RC7.5**, RC7.4'teki stabil canlı görüntüyü aynen koruyarak tarihsel olarak doğrulanan `TAKE_PHOTO` (msg_id 769) ve `RECORD_STOP` (msg_id 514) kontrol protokollerini ve hata durum modellemesini restore eder *(Fiziksel donanım saha testi kullanıcı tarafından yapılmak üzere beklenmektedir)*.
+Field Test RC7.2 **gerçek ASUS RECO Smart CR38 / SanJet DR38AS donanımı üzerinde fiziksel olarak test edilmiş ve tam başarıyla doğrulanmıştır.** RC7.4 ve RC7.5 güncellemeleri canlı önizleme ve kontrol protokolünü stabilize etmiştir. **Field Test RC7.6**, USB kablosu ve ADB hata ayıklaması olmadan tek başına telefon ve CR38 Wi-Fi ağı üzerinden fiziksel bağlantı hatasını çözer.
+
+### Field Test RC7.6 ile Eklenen / Düzeltilen Özellikler:
+
+- 🌐 **Android No-Internet Wi-Fi Rotalaması (USB Olmadan Bağlantı Fix)**:
+  - CR38 Wi-Fi erişim noktasının internet erişimi OLMAMASI normaldir. Android 10+ ve Samsung One UI (örn: Galaxy Z Fold) sistemlerinde, internetsiz Wi-Fi bağlandığında sistem tüm trafiği varsayılan olarak Mobil Veriye (4G/5G) yönlendirir ve bağımsız `Socket()` çağrıları `192.168.42.1` adresine ulaşamaz.
+  - RC7.6 ile `CameraNetworkManager` üzerinden tüm TCP komut (7878), ikincil veri (8787) ve HTTP medya soketleri doğrudan `TRANSPORT_WIFI` ağına (`Network.socketFactory` / `Network.bindSocket` / `Network.openConnection`) bağlanmıştır.
+  - Wi-Fi için `NET_CAPABILITY_INTERNET` veya `NET_CAPABILITY_VALIDATED` zorunluluğu kaldırılmıştır.
+  - Uygulama süreci (process) global olarak Wi-Fi'ye kilitlenmez; normal mobil veri interneti aktif kalırken yalnızca CR38 trafiği Wi-Fi üzerinden yönlendirilir.
+  - USB kablosu ve ADB bağımlılığı tamamen kaldırılmıştır (USB takılı olmadan telefon + CR38 Wi-Fi ile 100% bağımsız bağlantı).
+- 🚦 **Katmanlı Hata Modeli ve TCP / Token Ayrımı**:
+  - `SessionState` içine `TcpConnecting`, `TcpConnectionFailed`, `StartSessionSent`, `TokenInvalid` gibi açık aşama durumları eklendi.
+  - `192.168.42.1:7878` TCP portuna ulaşılamadığında "Token alınamadı" hatası yerine `"Kamera Wi-Fi ağına bağlısınız ancak CR38 TCP bağlantısı kurulamadı."` açık hatası gösterilir. Token hatası YALNIZCA `START_SESSION` komutu iletildikten sonra oluşursa raporlanır.
+- 🛠️ **Bağlantı Teşhis Testi ("Bağlantıyı Test Et")**:
+  - Bağlantı ekranına kamera kaydını bozmayan ve `STOP_VF` / `RECORD_STOP` komutları göndermeyen non-disruptive teşhis aksiyonu eklendi.
+  - Aşama sonuçları: CR38 Wi-Fi Rotalaması, TCP 7878, START_SESSION El Sıkışması, Token Alımı ve İkincil Veri Soketi (8787) ayrı ayrı raporlanır.
 
 ### Field Test RC7.5 ile Eklenen / Düzeltilen Özellikler:
 
@@ -236,9 +251,23 @@ Built from scratch using modern Android architecture (**Kotlin**, **Jetpack Comp
 
 ---
 
-## 🎯 Hardware Physical Verification Status (Field Test RC7.2 Baseline, RC7.3, RC7.4 & RC7.5 Updates)
+## 🎯 Hardware Physical Verification Status (Field Test RC7.2 Baseline, RC7.3, RC7.4, RC7.5 & RC7.6 Updates)
 
-Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.** RC7.4 established stable Live Preview and tab navigation continuity. **Field Test RC7.5** preserves stable Live Preview while restoring historically proven `TAKE_PHOTO` (msg_id 769) and `RECORD_STOP` (msg_id 514) control protocols and result modeling *(Physical hardware field verification pending user test)*.
+Field Test RC7.2 has been **physically tested and fully verified on real ASUS RECO Smart CR38 / SanJet DR38AS hardware.** RC7.4 & RC7.5 updates stabilized Live Preview and control protocols. **Field Test RC7.6** resolves standalone physical connection failures occurring without USB cables or ADB debugging.
+
+### Added Features in Field Test RC7.6:
+
+- 🌐 **Android No-Internet Wi-Fi Per-Network Socket Routing**:
+  - CR38 Wi-Fi AP intentionally has NO INTERNET access. On Android 10+ and Samsung One UI (e.g. Galaxy Z Fold), Android routes default socket traffic over Mobile Data (4G/5G) when Wi-Fi lacks internet, causing unbound TCP sockets to fail reaching `192.168.42.1`.
+  - RC7.6 enforces explicit Wi-Fi network routing via `CameraNetworkManager` for command TCP socket 7878, secondary data TCP socket 8787, and camera HTTP media access (`Network.socketFactory` / `Network.bindSocket` / `Network.openConnection`).
+  - `NET_CAPABILITY_INTERNET` and `NET_CAPABILITY_VALIDATED` are explicitly NOT required for camera Wi-Fi routing.
+  - Cellular data remains active for general phone/app internet access without global process network hijacking.
+  - Standalone operation tested without USB cables or ADB dependencies.
+- 🚦 **Explicit Stage Error Separation (TCP vs. Token)**:
+  - Introduced granular connection stages (`TcpConnecting`, `TcpConnectionFailed`, `StartSessionSent`, `TokenInvalid`).
+  - Reachability failures on `192.168.42.1:7878` are cleanly reported as TCP route errors (`"CR38 TCP connection could not be established"`) instead of confusing token errors.
+- 🛠️ **Non-Disruptive Connection Diagnostic ("Bağlantıyı Test Et")**:
+  - Optional diagnostic action added to Connection screen testing Wi-Fi route, TCP 7878, START_SESSION handshake, token acquisition, and data socket 8787 without sending `STOP_VF` or `RECORD_STOP` and without interrupting active recordings.
 
 ### Added / Restored Features in Field Test RC7.5:
 

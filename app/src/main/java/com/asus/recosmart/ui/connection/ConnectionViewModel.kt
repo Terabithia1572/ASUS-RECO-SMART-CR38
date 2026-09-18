@@ -87,6 +87,22 @@ class ConnectionViewModel(
         }
     }
 
+    private val _diagnosticResult = MutableStateFlow<com.asus.recosmart.domain.model.ConnectionDiagnosticResult?>(null)
+    val diagnosticResult: StateFlow<com.asus.recosmart.domain.model.ConnectionDiagnosticResult?> = _diagnosticResult.asStateFlow()
+
+    private val _isDiagnosing = MutableStateFlow(false)
+    val isDiagnosing: StateFlow<Boolean> = _isDiagnosing.asStateFlow()
+
+    fun runDiagnosticTest() {
+        viewModelScope.launch {
+            _isDiagnosing.value = true
+            _diagnosticResult.value = null
+            val result = repository.performConnectionDiagnostic()
+            _diagnosticResult.value = result
+            _isDiagnosing.value = false
+        }
+    }
+
     fun disconnect() {
         viewModelScope.launch {
             repository.disconnect()

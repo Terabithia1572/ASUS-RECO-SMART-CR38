@@ -8,9 +8,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Router
-import androidx.compose.material.icons.filled.SignalWifi4Bar
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -46,6 +48,9 @@ fun ConnectionScreen(
 
     val isVehicleModeEnabled by viewModel.isVehicleModeEnabled.collectAsState()
     val autoStartRecordingIfIdle by viewModel.autoStartRecordingIfIdle.collectAsState()
+
+    val diagnosticResult by viewModel.diagnosticResult.collectAsState()
+    val isDiagnosing by viewModel.isDiagnosing.collectAsState()
 
     Column(
         modifier = Modifier
@@ -90,7 +95,7 @@ fun ConnectionScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = "Field Test RC7.5",
+                                text = "Field Test RC7.6",
                                 color = PrimaryCyan,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -151,13 +156,13 @@ fun ConnectionScreen(
                     Icon(Icons.Default.Wifi, contentDescription = null, tint = PrimaryCyan, modifier = Modifier.size(32.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Wi-Fi Bağlantı Yardımcısı",
+                            text = "Wi-Fi Bağlantı Yönlendirmesi",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = PrimaryCyan
                         )
                         Text(
-                            text = "Telefonunuzu kameranın Wi-Fi ağına (CR38_...) bağlayın.",
+                            text = "Kamera Wi-Fi erişim noktasında internet olmaması NORMALDİR. Kamera trafiği Wi-Fi üzerinden, normal internet Mobil Veri üzerinden akar.",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -224,7 +229,7 @@ fun ConnectionScreen(
                     text = if (isMockMode)
                         "Fiziksel kameraya bağlantı kurulmaz. Uygulama test verileriyle çalışır."
                     else
-                        "Önce telefonunuzu CR38 kameranın Wi-Fi ağına (CR38_...) bağlayın.",
+                        "Telefonunuzu CR38 kameranın Wi-Fi ağına (CR38_...) bağlayın. USB kablosu gerekmez.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -250,32 +255,101 @@ fun ConnectionScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                if (sessionState.isConnected) {
-                    Button(
-                        onClick = { viewModel.disconnect() },
-                        colors = ButtonDefaults.buttonColors(containerColor = RecordRed),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { viewModel.runDiagnosticTest() },
+                        enabled = !isDiagnosing,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryCyan)
                     ) {
-                        Text("Bağlantıyı Kes", fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    val isPending = sessionState is SessionState.TcpConnected || sessionState is SessionState.SessionStarting
-                    Button(
-                        onClick = { viewModel.connect() },
-                        enabled = !isPending,
-                        colors = ButtonDefaults.buttonColors(containerColor = if (isMockMode) Color(0xFFF97316) else PrimaryCyan),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        if (isPending) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (sessionState is SessionState.TcpConnected) "TCP Bağlandı..." else "Oturum Başlatılıyor...")
+                        if (isDiagnosing) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PrimaryCyan, strokeWidth = 2.dp)
                         } else {
-                            Text(if (isMockMode) "Simülasyonu Başlat" else "Kameraya Bağlan", fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.NetworkCheck, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Bağlantıyı Test Et", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    if (sessionState.isConnected) {
+                        Button(
+                            onClick = { viewModel.disconnect() },
+                            colors = ButtonDefaults.buttonColors(containerColor = RecordRed),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Bağlantıyı Kes", fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        val isPending = sessionState is SessionState.TcpConnected || 
+                                sessionState is SessionState.SessionStarting || 
+                                sessionState is SessionState.TcpConnecting || 
+                                sessionState is SessionState.Connecting
+                        Button(
+                            onClick = { viewModel.connect() },
+                            enabled = !isPending,
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isMockMode) Color(0xFFF97316) else PrimaryCyan),
+                            modifier = Modifier.weight(1.2f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isPending) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (sessionState is SessionState.SessionStarting) "Oturum Açılıyor..." else "Bağlanıyor...", fontSize = 12.sp)
+                            } else {
+                                Text(if (isMockMode) "Simülasyonu Başlat" else "Kameraya Bağlan", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Connection Diagnostic Card (Visible after test execution)
+        diagnosticResult?.let { diag ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (diag.isAllPass) SuccessGreen.copy(alpha = 0.5f) else Color(0xFFF97316).copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "CR38 Bağlantı Teşhis Sonucu",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = if (diag.isAllPass) SuccessGreen else Color(0xFFF97316)
+                        )
+                        if (diag.latencyMs > 0) {
+                            Text("${diag.latencyMs} ms", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    DiagnosticStageRow("CR38 Wi-Fi Rotalaması", diag.wifiRouteOk)
+                    DiagnosticStageRow("TCP Port 192.168.42.1:7878", diag.tcp7878Ok)
+                    DiagnosticStageRow("START_SESSION El Sıkışması", diag.sessionOk)
+                    DiagnosticStageRow("Session Token Alımı", diag.tokenOk)
+                    DiagnosticStageRow("İkincil Veri Soketi (8787)", diag.dataSocket8787Ok)
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = diag.summary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (diag.isAllPass) SuccessGreen else MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
@@ -359,15 +433,20 @@ fun ConnectionScreen(
                     Text(
                         text = when (sessionState) {
                             is SessionState.Connected -> if (isMockMode) "Simülasyon Aktif" else "Bağlı"
-                            is SessionState.Connecting, is SessionState.SessionStarting -> "Oturum Başlatılıyor"
-                            is SessionState.TcpConnected -> "TCP Bağlandı"
-                            is SessionState.Disconnected -> "Bağlı Değil"
+                            is SessionState.Connecting, is SessionState.SessionStarting, is SessionState.StartSessionSent -> "Oturum Başlatılıyor"
+                            is SessionState.StartSessionTimeout -> "Oturum Zaman Aşımı"
+                            is SessionState.TcpConnecting -> "TCP Bağlantısı Kuruluyor..."
+                            is SessionState.TcpConnected -> "TCP Bağlandı (7878)"
+                            is SessionState.TcpConnectionFailed -> "TCP Bağlantı Hatası"
+                            is SessionState.TokenInvalid -> "Token Hatası"
+                            is SessionState.DataSocketFailed -> "Veri Soket Hatası"
+                            is SessionState.Disconnected, is SessionState.WifiNotConnected, is SessionState.CameraNetworkNotFound, is SessionState.RouteNotAvailable -> "Bağlı Değil"
                             is SessionState.Error -> "Bağlantı Hatası"
                         },
                         fontWeight = FontWeight.Bold,
                         color = when (sessionState) {
                             is SessionState.Connected -> if (isMockMode) Color(0xFFF97316) else SuccessGreen
-                            is SessionState.Connecting, is SessionState.TcpConnected, is SessionState.SessionStarting -> PrimaryCyan
+                            is SessionState.Connecting, is SessionState.TcpConnecting, is SessionState.TcpConnected, is SessionState.SessionStarting, is SessionState.StartSessionSent -> PrimaryCyan
                             else -> RecordRed
                         }
                     )
@@ -419,17 +498,23 @@ fun ConnectionScreen(
 
                 val derivedStatusText = when (val state = sessionState) {
                     is SessionState.Connected -> if (isMockMode) "Simülasyon bağlantısı aktif." else "Kamera bağlantısı başarılı."
+                    is SessionState.TcpConnecting -> "192.168.42.1:7878 TCP soket bağlantısı kuruluyor..."
                     is SessionState.TcpConnected -> "TCP soket bağlantısı kuruldu (Port 7878). Oturum başlatılıyor..."
-                    is SessionState.Connecting, is SessionState.SessionStarting -> "START_SESSION (msg_id 257) gönderiliyor, token bekleniyor..."
+                    is SessionState.TcpConnectionFailed -> state.reason
+                    is SessionState.StartSessionSent -> "START_SESSION (msg_id 257) gönderildi, token yanıtı bekleniyor..."
+                    is SessionState.StartSessionTimeout -> "START_SESSION yanıt zaman aşımına uğradı."
+                    is SessionState.Connecting, is SessionState.SessionStarting -> "START_SESSION (msg_id 257) gönderiliyor..."
+                    is SessionState.TokenInvalid -> "Kamera ile TCP kuruldu ancak oturum tokeni alınamadı."
+                    is SessionState.DataSocketFailed -> "İkincil veri soketi (8787) bağlantısı kurulamadı: ${state.reason}"
                     is SessionState.Error -> "Bağlantı hatası: ${state.message}"
-                    is SessionState.Disconnected -> if (statusMessage.isNullOrEmpty()) "Bağlantı bekleniyor." else statusMessage
+                    is SessionState.Disconnected, is SessionState.WifiNotConnected, is SessionState.CameraNetworkNotFound, is SessionState.RouteNotAvailable -> if (statusMessage.isNullOrEmpty()) "Bağlantı bekleniyor." else statusMessage
                 }
 
                 val derivedStatusColor = when (sessionState) {
                     is SessionState.Connected -> if (isMockMode) Color(0xFFF97316) else SuccessGreen
-                    is SessionState.Connecting, is SessionState.TcpConnected, is SessionState.SessionStarting -> PrimaryCyan
-                    is SessionState.Error -> RecordRed
-                    is SessionState.Disconnected -> MaterialTheme.colorScheme.onSurfaceVariant
+                    is SessionState.Connecting, is SessionState.TcpConnecting, is SessionState.TcpConnected, is SessionState.SessionStarting, is SessionState.StartSessionSent -> PrimaryCyan
+                    is SessionState.Error, is SessionState.TcpConnectionFailed, is SessionState.TokenInvalid, is SessionState.DataSocketFailed -> RecordRed
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
 
                 if (!derivedStatusText.isNullOrEmpty()) {
@@ -442,6 +527,34 @@ fun ConnectionScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticStageRow(title: String, isOk: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = title, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error,
+                contentDescription = null,
+                tint = if (isOk) SuccessGreen else RecordRed,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = if (isOk) "OK" else "FAILED",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isOk) SuccessGreen else RecordRed
+            )
         }
     }
 }

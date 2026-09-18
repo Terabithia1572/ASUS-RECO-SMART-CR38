@@ -85,19 +85,23 @@ class DefaultCameraRepository : CameraRepository {
             return mockRepository.connect(ip, port)
         }
 
-        sessionManager.setTcpConnected()
+        sessionManager.setTcpConnecting()
         tcpClient.log("[REAL CONNECT] Stage 1/3: Connecting TCP command socket to $ip:$port...")
 
         // Step 1: Connect Command TCP socket (Port 7878)
         val cmdConnRes = tcpClient.connectCommandSocket(ip, port)
         if (cmdConnRes.isFailure) {
-            val err = cmdConnRes.exceptionOrNull()?.localizedMessage ?: "Failed to connect command socket"
-            sessionManager.setError("TCP Connection failed: $err")
-            return Result.failure(cmdConnRes.exceptionOrNull() ?: Exception(err))
+            val rawErr = cmdConnRes.exceptionOrNull()?.localizedMessage ?: "CR38 TCP port 7878 unreachable"
+            val userMsg = "Kamera Wi-Fi ağına bağlısınız ancak CR38 TCP bağlantısı kurulamadı ($rawErr)."
+            sessionManager.setTcpConnectionFailed(userMsg)
+            return Result.failure(Exception(userMsg, cmdConnRes.exceptionOrNull()))
         }
+
+        sessionManager.setTcpConnected()
 
         // Step 2: Stage 2/3 - Perform START_SESSION handshake
         sessionManager.setSessionStarting()
+        sessionManager.setStartSessionSent()
         tcpClient.log("[REAL SESSION] Stage 2/3: Sending START_SESSION (msg_id 257)...")
 
         val sessionRes = startSession()
@@ -133,9 +137,10 @@ class DefaultCameraRepository : CameraRepository {
 
             Result.success(Unit)
         } else {
-            val err = sessionRes.exceptionOrNull()?.localizedMessage ?: "START_SESSION failed"
+            val err = sessionRes.exceptionOrNull()?.localizedMessage ?: "Start session rejected"
             tcpClient.disconnect()
-            sessionManager.setError(err)
+            sessionManager.setState(SessionState.TokenInvalid)
+            sessionManager.setError("Token alınamadı: $err")
             Result.failure(sessionRes.exceptionOrNull() ?: Exception(err))
         }
     }
@@ -538,6 +543,94 @@ class DefaultCameraRepository : CameraRepository {
     override suspend fun sendRawCommand(msgId: Int, param: String?): Result<CameraResponse> {
         if (_isMockMode.value) return mockRepository.sendRawCommand(msgId, param)
         return sendCommandInternal(CameraCommand.CustomCommand(msgId, "RAW_$msgId", param))
+    }
+
+    override suspend fun performConnectionDiagnostic(): com.asus.recosmart.domain.model.ConnectionDiagnosticResult {
+        if (_isMockMode.value) {
+            return mockRepository.performConnectionDiagnostic()
+        }
+
+        return withContext(Dispatchers.IO) {
+            var wifiRouteOk = false
+            var tcp7878Ok = false
+            var sessionOk = false
+            var tokenOk = false
+            var dataSocket8787Ok = false
+            var latencyMs = -1L
+
+            tcpClient.log("[DIAG] Starting non-disruptive CR38 connection diagnostic...")
+
+            val preflight = com.asus.recosmart.data.network.CameraNetworkManager.performNetworkPreflight()
+            wifiRouteOk = preflight.isWifiConnected || preflight.wifiNetworkFound
+            latencyMs = preflight.latencyMs
+
+            val tempSocket = com.asus.recosmart.data.network.CameraNetworkManager.createWifiSocket()
+            try {
+                val startTime = System.currentTimeMillis()
+                tempSocket.connect(java.net.InetSocketAddress(CameraStatus.DEFAULT_CAMERA_IP, CameraStatus.DEFAULT_COMMAND_PORT), 3000)
+                latencyMs = System.currentTimeMillis() - startTime
+                tcp7878Ok = true
+                tempSocket.close()
+                tcpClient.log("[DIAG] TCP 7878 route check: OK (${latencyMs}ms)")
+            } catch (e: Exception) {
+                tcp7878Ok = false
+                tcpClient.log("[DIAG] TCP 7878 route check: FAILED (${e.localizedMessage})")
+            }
+
+            val currentSession = sessionState.value
+            if (currentSession is SessionState.Connected) {
+                sessionOk = true
+                tokenOk = currentSession.token > 0
+
+                val testDataSocket = com.asus.recosmart.data.network.CameraNetworkManager.createWifiSocket()
+                try {
+                    testDataSocket.connect(java.net.InetSocketAddress(CameraStatus.DEFAULT_CAMERA_IP, CameraStatus.DEFAULT_DATA_PORT), 2000)
+                    dataSocket8787Ok = true
+                    testDataSocket.close()
+                } catch (e: Exception) {
+                    dataSocket8787Ok = false
+                }
+            } else if (tcp7878Ok) {
+                try {
+                    val testClient = TcpSocketClient()
+                    val connRes = testClient.connectCommandSocket(CameraStatus.DEFAULT_CAMERA_IP, CameraStatus.DEFAULT_COMMAND_PORT, timeoutMs = 3000)
+                    if (connRes.isSuccess) {
+                        val sessionRes = testClient.sendCommand(CameraCommand.StartSession, token = 0)
+                        if (sessionRes.isSuccess && sessionRes.getOrNull()?.isSuccess == true) {
+                            val token = sessionRes.getOrNull()?.token ?: 0
+                            sessionOk = true
+                            tokenOk = token > 0
+
+                            val dataRes = testClient.connectDataSocket(CameraStatus.DEFAULT_CAMERA_IP, CameraStatus.DEFAULT_DATA_PORT, timeoutMs = 2000)
+                            dataSocket8787Ok = dataRes.isSuccess
+                        }
+                        testClient.disconnect()
+                    }
+                } catch (e: Exception) {
+                    tcpClient.log("[DIAG] Handshake test error: ${e.localizedMessage}")
+                }
+            }
+
+            val summaryMsg = when {
+                !wifiRouteOk -> "CR38 Wi-Fi ağı bulunamadı. Lütfen Wi-Fi ayarlarına bakın."
+                !tcp7878Ok -> "Kamera Wi-Fi bağlı ancak 192.168.42.1:7878 portuna ulaşılamadı."
+                !sessionOk || !tokenOk -> "TCP bağlantısı kuruldu ancak START_SESSION yanıt vermedi veya token geçersiz."
+                !dataSocket8787Ok -> "Komut soketi (7878) ve Token OK, ancak ikincil veri soketi (8787) açılamadı."
+                else -> "Tüm CR38 bağlantı ve soket rotaları sorunsuz çalışıyor ($latencyMs ms)."
+            }
+
+            tcpClient.log("[DIAG] Summary: $summaryMsg")
+
+            com.asus.recosmart.domain.model.ConnectionDiagnosticResult(
+                wifiRouteOk = wifiRouteOk,
+                tcp7878Ok = tcp7878Ok,
+                sessionOk = sessionOk,
+                tokenOk = tokenOk,
+                dataSocket8787Ok = dataSocket8787Ok,
+                latencyMs = latencyMs,
+                summary = summaryMsg
+            )
+        }
     }
 
     override fun toggleMockMode(enabled: Boolean) {

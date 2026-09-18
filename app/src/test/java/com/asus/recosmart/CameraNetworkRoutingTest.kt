@@ -58,7 +58,7 @@ class CameraNetworkRoutingTest {
         val tcpFailedState = SessionState.TcpConnectionFailed("TCP 192.168.42.1:7878 unreachable")
         val tokenInvalidState = SessionState.TokenInvalid
 
-        assertFalse(tcpFailedState is SessionState.Connected)
+        assertFalse(tcpFailedState.isConnected)
         assertFalse(tcpFailedState == tokenInvalidState)
         assertTrue(tcpFailedState.reason.contains("TCP"))
     }
@@ -66,7 +66,7 @@ class CameraNetworkRoutingTest {
     @Test
     fun `test 6 - token error only occurs after START_SESSION response handling`() {
         val tokenInvalidState = SessionState.TokenInvalid
-        assertTrue(tokenInvalidState is SessionState)
+        assertFalse(tokenInvalidState.isConnected)
     }
 
     @Test
